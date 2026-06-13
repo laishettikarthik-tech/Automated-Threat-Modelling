@@ -781,6 +781,116 @@ async def canvas_page(request: Request):
     )
 
 
+
+# ===========================================================================
+# THREAT STATUS — remediation tracking
+# ===========================================================================
+class ThreatStatusUpdate(BaseModel):
+    threat_id: str
+    threat_model_id: int
+    status: str  # open | in_progress | mitigated | accepted_risk | false_positive
+    notes: str | None = None
+    owner: str | None = None
+    due_date: str | None = None
+
+
+@app.post("/api/threat-status")
+async def update_threat_status_endpoint(
+    req: ThreatStatusUpdate,
+    user: dict = Depends(get_current_user),
+):
+    """Update per-threat remediation status, owner, and due date."""
+    tm = domain.get_threat_model(req.threat_model_id)
+    if not tm:
+        raise HTTPException(404, "Threat model not found")
+    ensure_can_access_threat_model(user, tm)
+    try:
+        result = domain.upsert_threat_status(
+            req.threat_model_id, req.threat_id, req.status,
+            notes=req.notes, updated_by=user["id"],
+            owner=req.owner, due_date=req.due_date
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return result
+
+
+@app.get("/api/threat-status/{threat_model_id}")
+async def get_all_threat_statuses(
+    threat_model_id: int,
+    user: dict = Depends(get_current_user),
+):
+    """Get all threat statuses for a threat model."""
+    tm = domain.get_threat_model(threat_model_id)
+    if not tm:
+        raise HTTPException(404, "Threat model not found")
+    ensure_can_access_threat_model(user, tm)
+    return domain.list_threat_statuses(threat_model_id)
+
+
+@app.get("/api/threat-status/{threat_model_id}/{threat_id}/history")
+async def get_threat_status_history_endpoint(
+    threat_model_id: int,
+    threat_id: str,
+    user: dict = Depends(get_current_user),
+):
+    """Get full status change history for a specific threat."""
+    tm = domain.get_threat_model(threat_model_id)
+    if not tm:
+        raise HTTPException(404, "Threat model not found")
+    ensure_can_access_threat_model(user, tm)
+    return domain.get_threat_status_history(threat_model_id, threat_id)
+
+
+# ===========================================================================
+# REPORT: Risk register CSV export
+# ===========================================================================
+@app.post("/api/report/csv")
+async def report_csv(request: Request, user: dict = Depends(get_current_user)):
+    """Export threat analysis as a risk register CSV."""
+    body = await request.json()
+    threats = body.get("threats", [])
+    system_name = body.get("system", {}).get("name", "System")
+    import csv, io
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["ID", "Title", "Severity", "Methodology", "Component", "Category",
+                     "CVSS3.1", "DREAD", "Cross-boundary", "Status", "Owner", "Due date", "Description"])
+    for i, t in enumerate(threats):
+        writer.writerow([
+            t.get("id", f"T{i+1:03d}"),
+            t.get("title", ""),
+            t.get("severity", ""),
+            t.get("methodology", "").upper(),
+            t.get("component_name", ""),
+            t.get("category", ""),
+            t.get("cvss31", {}).get("score", ""),
+            t.get("dread", {}).get("total", "") if t.get("dread") else "",
+            "Yes" if t.get("cross_boundary") else "No",
+            "open", "", "",
+            t.get("description", ""),
+        ])
+    csv_bytes = buf.getvalue().encode("utf-8")
+    return Response(
+        content=csv_bytes,
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="risk_register_{system_name.replace(" ","_")}.csv"'}
+    )
+
+
+# ===========================================================================
+# TEMPLATES — serve static templates.json
+# ===========================================================================
+@app.get("/api/templates")
+async def get_templates():
+    """Return built-in system templates."""
+    import json as _json
+    tpl_path = BASE_DIR / "static" / "templates.json"
+    if not tpl_path.exists():
+        return []
+    return _json.loads(tpl_path.read_text())
+
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", "8000"))
