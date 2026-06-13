@@ -54,7 +54,69 @@ app.add_middleware(
     allow_credentials=True,
 )
 
+
+# ===========================================================================
+# SECURITY — headers, rate limiting, CORS tightening
+# ===========================================================================
+from fastapi import Request as _Req
+from fastapi.responses import Response as _Resp
+from starlette.middleware.base import BaseHTTPMiddleware
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Add security headers to every response."""
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "geolocation=(), camera=(), microphone=()"
+        if request.url.scheme == "https":
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        return response
+
+
+# Simple in-memory rate limiter (replace with Redis-backed for production)
+import time as _time
+from collections import defaultdict as _defaultdict
+_rate_store: dict = _defaultdict(list)
+
+def _rate_limit(key: str, limit: int, window: int) -> bool:
+    """Return True if request is allowed, False if rate limited."""
+    now = _time.time()
+    _rate_store[key] = [t for t in _rate_store[key] if now - t < window]
+    if len(_rate_store[key]) >= limit:
+        return False
+    _rate_store[key].append(now)
+    return True
+
+
+class RateLimitMiddleware(BaseHTTPMiddleware):
+    """Rate-limit sensitive auth endpoints."""
+    LIMITS = {
+        "/api/auth/login":    (10, 60),   # 10 req/min
+        "/api/auth/register": (5,  60),   # 5  req/min
+        "/api/auth/refresh":  (20, 60),   # 20 req/min
+    }
+    async def dispatch(self, request, call_next):
+        path = request.url.path
+        if path in self.LIMITS:
+            limit, window = self.LIMITS[path]
+            ip = request.client.host if request.client else "unknown"
+            key = f"rl:{path}:{ip}"
+            if not _rate_limit(key, limit, window):
+                return _Resp(
+                    content='{"detail":"Too many requests. Please try again later."}',
+                    status_code=429,
+                    media_type="application/json",
+                )
+        return await call_next(request)
+
+
 BASE_DIR = Path(__file__).resolve().parent
+app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(RateLimitMiddleware)
+
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
