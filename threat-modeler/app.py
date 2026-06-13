@@ -966,6 +966,32 @@ async def report_csv(request: Request, user: dict = Depends(get_current_user)):
     )
 
 
+
+# ===========================================================================
+# EXECUTIVE REPORT — Claude-narrated PDF/HTML summary
+# ===========================================================================
+@app.post("/api/report/executive")
+async def report_executive(request: Request, user: dict = Depends(get_current_user)):
+    """Generate an executive threat model report (HTML or PDF).
+    Query param: ?format=html (default) | ?format=pdf (requires WeasyPrint).
+    """
+    from threat_engine.executive_report import generate_executive_report, html_to_pdf
+    body   = await request.json()
+    fmt    = request.query_params.get("format", "html")
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    html   = generate_executive_report(body, api_key=api_key)
+
+    if fmt == "pdf":
+        pdf = html_to_pdf(html)
+        if pdf:
+            name = body.get("system", {}).get("name", "System").replace(" ", "_")
+            return Response(content=pdf, media_type="application/pdf",
+                            headers={"Content-Disposition": f'attachment; filename="exec_report_{name}.pdf"'})
+        # WeasyPrint not installed — fall back to HTML download
+    name = body.get("system", {}).get("name", "System").replace(" ", "_")
+    return Response(content=html.encode(), media_type="text/html",
+                    headers={"Content-Disposition": f'attachment; filename="exec_report_{name}.html"'})
+
 # ===========================================================================
 # TEMPLATES — serve static templates.json
 # ===========================================================================
