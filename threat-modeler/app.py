@@ -713,6 +713,7 @@ async def extract_from_diagram(
     """
     from fastapi import UploadFile, Form
     from threat_engine.diagram_extractor import extract_from_diagram as _extract
+from threat_engine.notifications import diff_threats, notify_all
 
     # Parse multipart manually since FastAPI needs type annotations on path functions
     form = await request.form()
