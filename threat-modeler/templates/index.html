@@ -780,6 +780,15 @@
 
 })();
 </script>
+
+<script>
+// QA fix: expose renderCanvas as window global for enhancements.js minimap
+document.addEventListener('DOMContentLoaded', () => {
+  if (typeof renderCanvas === 'function' && !window.renderCanvas) {
+    window.renderCanvas = renderCanvas;
+  }
+});
+</script>
 <script src="/static/js/enhancements.js"></script>
 </body>
 </html>
