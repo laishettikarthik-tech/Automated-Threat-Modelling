@@ -904,6 +904,31 @@ async def get_threat_status_history_endpoint(
     return domain.get_threat_status_history(threat_model_id, threat_id)
 
 
+
+# ===========================================================================
+# TICKET EXPORT — push threats to GitHub Issues / Jira
+# ===========================================================================
+class CreateTicketRequest(BaseModel):
+    threat: dict
+    system_name: str
+    provider: str  # "github" | "jira"
+
+
+@app.post("/api/create-ticket")
+async def create_ticket(req: CreateTicketRequest, user: dict = Depends(get_current_user)):
+    """Create a GitHub Issue or Jira ticket for a single threat."""
+    from threat_engine.ticket_export import create_github_issue, create_jira_issue
+    try:
+        if req.provider == "github":
+            result = create_github_issue(req.threat, req.system_name)
+        elif req.provider == "jira":
+            result = create_jira_issue(req.threat, req.system_name)
+        else:
+            raise HTTPException(400, f"Unknown provider: {req.provider!r}. Use 'github' or 'jira'.")
+        return result
+    except RuntimeError as e:
+        raise HTTPException(400, str(e))
+
 # ===========================================================================
 # REPORT: Risk register CSV export
 # ===========================================================================
