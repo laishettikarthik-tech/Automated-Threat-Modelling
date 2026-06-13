@@ -52,6 +52,8 @@
     injectRemediationControls(analysis);
     injectAttackPaths(analysis);
     injectExportButtons(analysis);
+    injectTicketAndReportButtons(analysis);
+    setTimeout(injectCreateTicketButtons, 300);
   };
 
   /* ════════════════════════════════════════════════════════════════════════
