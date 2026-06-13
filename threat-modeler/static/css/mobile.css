@@ -1,0 +1,64 @@
+/* ==========================================================================
+   mobile.css — Responsive overrides for Automated Threat Modeler
+   Injected after app.css for screens < 768px
+   ========================================================================== */
+
+@media (max-width: 768px) {
+  /* ── Main layout ── */
+  main { padding: 12px !important; }
+
+  /* ── Methodology grid: 2 columns on mobile ── */
+  #methodology-grid { grid-template-columns: 1fr 1fr !important; gap: 8px !important; }
+
+  /* ── Builder: stack canvas below form ── */
+  #tab-builder > div { grid-template-columns: 1fr !important; }
+  #tab-builder .lg\:col-span-4 { max-height: none !important; }
+  #tab-builder .lg\:col-span-8 { min-height: 400px !important; }
+
+  /* ── DFD canvas: shorter on mobile ── */
+  #dfd-canvas-wrap { height: 360px !important; }
+
+  /* ── Minimap: hidden on small screens ── */
+  #dfd-minimap { display: none !important; }
+
+  /* ── Results filters: collapsible ── */
+  #results-filter-bar { flex-direction: column !important; gap: 8px !important; }
+  #filter-severity, #filter-methodology, #filter-component, #filter-search {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  /* ── Severity cards: 3 across ── */
+  #severity-cards { grid-template-columns: repeat(3, 1fr) !important; }
+
+  /* ── Risk matrix: scrollable ── */
+  #enh-risk-matrix { overflow-x: auto !important; }
+
+  /* ── Threat cards: full width ── */
+  #threat-list .threat-card { margin-bottom: 8px !important; }
+
+  /* ── Header: compact ── */
+  header .max-w-7xl { padding: 0 12px !important; }
+  header h1 { font-size: 15px !important; }
+  header p.text-xs { display: none !important; }
+
+  /* ── Export buttons: wrap ── */
+  #results .flex.gap-2 { flex-wrap: wrap !important; }
+  #results .flex.gap-2 button { font-size: 12px !important; padding: 6px 10px !important; }
+
+  /* ── Tab buttons: smaller ── */
+  .tab-btn { padding: 8px 10px !important; font-size: 12px !important; }
+
+  /* ── Diagram upload: full width tips ── */
+  #tab-diagram > div { grid-template-columns: 1fr !important; }
+  #tab-diagram .bg-slate-50 { display: none !important; } /* hide tips panel on mobile */
+
+  /* ── Projects modal ── */
+  #projects-modal > div { max-height: 90vh !important; }
+}
+
+/* Touch-friendly drag targets on DFD nodes */
+@media (pointer: coarse) {
+  .dfd-node rect, .dfd-node line { stroke-width: 2 !important; }
+  .dfd-node text { font-size: 13px !important; }
+}
