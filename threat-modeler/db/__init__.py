@@ -326,3 +326,26 @@ CREATE INDEX IF NOT EXISTS idx_team_members_team ON team_members(team_id);
 CREATE INDEX IF NOT EXISTS idx_team_members_user ON team_members(user_id);
 CREATE INDEX IF NOT EXISTS idx_team_projects_team ON team_projects(team_id);
 """
+
+# ===========================================================================
+# E5: Custom threat rules (user-defined per project)
+# ===========================================================================
+CUSTOM_RULES_SQL = """
+CREATE TABLE IF NOT EXISTS custom_threat_rules (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     INTEGER NOT NULL,
+    name        TEXT    NOT NULL,
+    description TEXT    NOT NULL DEFAULT '',
+    category    TEXT    NOT NULL,
+    title       TEXT    NOT NULL,
+    severity    TEXT    NOT NULL DEFAULT 'Medium'
+                    CHECK (severity IN ('Critical','High','Medium','Low','Info')),
+    applies_to  TEXT    NOT NULL DEFAULT '[]',   -- JSON array of component types
+    mitigations TEXT    NOT NULL DEFAULT '[]',   -- JSON array of strings
+    tags        TEXT    NOT NULL DEFAULT '[]',
+    enabled     INTEGER NOT NULL DEFAULT 1,
+    created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+    updated_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_custom_rules_user ON custom_threat_rules(user_id);
+"""
