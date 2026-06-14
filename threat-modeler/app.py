@@ -1186,6 +1186,94 @@ async def readyz():
     except Exception as e:
         raise HTTPException(503, f"DB not ready: {e}")
 
+
+# ===========================================================================
+# P1: Release comparison diff
+# ===========================================================================
+@app.get("/api/releases/{id1}/diff/{id2}")
+async def diff_releases(id1: int, id2: int, user: dict = Depends(get_current_user)):
+    """Compare two saved threat models. Returns new/resolved/changed threats and surface delta."""
+    tm1 = domain.get_threat_model(id1)
+    tm2 = domain.get_threat_model(id2)
+    if not tm1 or not tm2:
+        raise HTTPException(404, "One or both threat models not found")
+    ensure_can_access_threat_model(user, tm1)
+    ensure_can_access_threat_model(user, tm2)
+
+    def _key(t): return (t.get("title","").lower().strip(), t.get("component_name","").lower().strip())
+    def _threats(tm):
+        ar = tm.get("analysis_result") or {}
+        return ar.get("threats", []) if isinstance(ar, dict) else []
+
+    t1_map = {_key(t): t for t in _threats(tm1)}
+    t2_map = {_key(t): t for t in _threats(tm2)}
+    new_threats      = [t for k, t in t2_map.items() if k not in t1_map]
+    resolved_threats = [t for k, t in t1_map.items() if k not in t2_map]
+    changed_severity = [
+        {"threat": t2_map[k], "old_severity": t1_map[k].get("severity"), "new_severity": t2_map[k].get("severity")}
+        for k in t1_map if k in t2_map and t1_map[k].get("severity") != t2_map[k].get("severity")
+    ]
+    c1 = {c.get("name","") for c in (tm1.get("components") or [])}
+    c2 = {c.get("name","") for c in (tm2.get("components") or [])}
+    return {
+        "model_1": {"id": id1, "name": tm1.get("name"), "created_at": tm1.get("created_at")},
+        "model_2": {"id": id2, "name": tm2.get("name"), "created_at": tm2.get("created_at")},
+        "new_threats": new_threats, "resolved_threats": resolved_threats,
+        "changed_severity": changed_severity,
+        "new_components": list(c2 - c1), "removed_components": list(c1 - c2),
+        "summary": {"new": len(new_threats), "resolved": len(resolved_threats),
+                    "changed": len(changed_severity), "net": len(new_threats) - len(resolved_threats)},
+    }
+
+
+# ===========================================================================
+# P2: AI "fix this threat" code snippet generator
+# ===========================================================================
+class FixRequest(BaseModel):
+    threat: dict
+    system_name: str = "System"
+    tech_stack: str = ""   # e.g. "Python/FastAPI + PostgreSQL"
+
+@app.post("/api/threat/fix")
+async def generate_fix(req: FixRequest, user: dict = Depends(get_current_user)):
+    """Ask Claude to generate a concrete before/after code fix for a threat."""
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise HTTPException(400, "Set ANTHROPIC_API_KEY to enable AI fix generation")
+    try:
+        import anthropic as _ant
+        client = _ant.Anthropic(api_key=api_key)
+        t = req.threat
+        prompt = f"""You are a senior security engineer. Generate a concrete code fix for this security threat.
+
+System: {req.system_name}
+Tech stack: {req.tech_stack or "not specified"}
+Threat title: {t.get("title","")}
+Severity: {t.get("severity","")}
+Category: {t.get("category","")}
+CWE: {(t.get("cwe") or {{}}).get("id","")} — {(t.get("cwe") or {{}}).get("name","")}
+Description: {t.get("description","")}
+Mitigations: {", ".join(t.get("mitigations") or [])}
+
+Return ONLY valid JSON (no markdown), with these exact keys:
+{{
+  "language": "<primary language inferred from stack>",
+  "explanation": "<one sentence: what the fix does>",
+  "before": "<vulnerable code snippet, 5-20 lines>",
+  "after": "<fixed code snippet, 5-20 lines>",
+  "diff_summary": "<2-3 lines: what changed and why>"
+}}"""
+        resp = client.messages.create(
+            model="claude-sonnet-4-6", max_tokens=1200,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        import re as _re, json as _js
+        text = resp.content[0].text.strip()
+        text = _re.sub(r"^```(?:json)?\s*|\s*```$", "", text, flags=_re.MULTILINE).strip()
+        return _js.loads(text)
+    except Exception as e:
+        raise HTTPException(500, f"Fix generation failed: {e}")
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", "8000"))
