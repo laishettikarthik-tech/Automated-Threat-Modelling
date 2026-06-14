@@ -989,4 +989,89 @@
   }
 
 
+  /* ════════════════════════════════════════════════════════════════════════
+   *  E5 — Custom threat rules CRUD (UI wiring)
+   * ════════════════════════════════════════════════════════════════════════ */
+  async function initCustomRulesTab() {
+    const saveBtn = document.getElementById('save-custom-rule-btn');
+    if (!saveBtn || saveBtn.dataset.wired) return;
+    saveBtn.dataset.wired = '1';
+
+    await loadCustomRules();
+
+    saveBtn.addEventListener('click', async () => {
+      const title = document.getElementById('rule-title').value.trim();
+      const name  = document.getElementById('rule-name').value.trim() || title;
+      if (!title) { toast && toast('Enter a threat title', 'error'); return; }
+
+      const payload = {
+        name, title,
+        severity:    document.getElementById('rule-severity').value,
+        category:    document.getElementById('rule-category').value || 'Custom',
+        description: document.getElementById('rule-description').value.trim(),
+        mitigations: document.getElementById('rule-mitigations').value
+                       .split('
+').map(s => s.trim()).filter(Boolean),
+        applies_to:  document.getElementById('rule-applies-to').value
+                       .split(',').map(s => s.trim()).filter(Boolean),
+      };
+      try {
+        saveBtn.textContent = 'Saving…'; saveBtn.disabled = true;
+        const r = await fetch('/api/custom-rules', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + TOKEN() },
+          body: JSON.stringify(payload),
+        });
+        if (!r.ok) throw new Error((await r.json()).detail || r.status);
+        toast && toast('Custom rule saved ✓', 'success');
+        ['rule-name','rule-title','rule-description','rule-mitigations','rule-applies-to'].forEach(id => {
+          const el = document.getElementById(id); if (el) el.value = '';
+        });
+        await loadCustomRules();
+      } catch (e) {
+        toast && toast('Failed: ' + e.message, 'error');
+      } finally { saveBtn.textContent = '+ Save rule'; saveBtn.disabled = false; }
+    });
+  }
+
+  async function loadCustomRules() {
+    const list = document.getElementById('custom-rules-list');
+    const count = document.getElementById('rules-count');
+    if (!list) return;
+    try {
+      const r = await fetch('/api/custom-rules', { headers: { Authorization: 'Bearer ' + TOKEN() } });
+      const rules = await r.json();
+      if (count) count.textContent = `(${rules.length})`;
+      if (!rules.length) {
+        list.innerHTML = '<p class="text-xs text-slate-400">No custom rules yet.</p>';
+        return;
+      }
+      const SEV_COLOR = {Critical:'#e11d48',High:'#f97316',Medium:'#eab308',Low:'#3b82f6',Info:'#94a3b8'};
+      list.innerHTML = rules.map(rule => `
+        <div style="border:1px solid #e2e8f0;border-left:3px solid ${SEV_COLOR[rule.severity]||'#94a3b8'};border-radius:7px;padding:10px 12px;background:white;">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+            <span style="font-size:13px;font-weight:600;color:#0f172a;flex:1;">${esc(rule.title)}</span>
+            <span style="font-size:10px;padding:1px 7px;border-radius:99px;background:${SEV_COLOR[rule.severity]}22;color:${SEV_COLOR[rule.severity]};font-weight:700;">${esc(rule.severity)}</span>
+            <button onclick="deleteCustomRule(${rule.id})" style="background:none;border:none;cursor:pointer;color:#94a3b8;font-size:14px;" title="Delete">✕</button>
+          </div>
+          ${rule.description ? `<div style="font-size:11px;color:#64748b;margin-bottom:4px;">${esc(rule.description.slice(0,80))}${rule.description.length>80?'…':''}</div>` : ''}
+          <div style="font-size:10px;color:#94a3b8;">${esc(rule.category)} · ${rule.applies_to.length ? rule.applies_to.join(', ') : 'all components'} · ${rule.mitigations.length} mitigation(s)</div>
+        </div>
+      `).join('');
+    } catch(e) { list.innerHTML = `<p class="text-xs text-red-400">Failed to load: ${esc(e.message)}</p>`; }
+  }
+
+  window.deleteCustomRule = async function(id) {
+    if (!confirm('Delete this rule?')) return;
+    await fetch(`/api/custom-rules/${id}`, { method: 'DELETE', headers: { Authorization: 'Bearer ' + TOKEN() } });
+    await loadCustomRules();
+    toast && toast('Rule deleted', 'success');
+  };
+
+  // Wire up on tab switch
+  document.querySelectorAll('.tab-btn[data-tab="rules"]').forEach(btn => {
+    btn.addEventListener('click', () => setTimeout(initCustomRulesTab, 100));
+  });
+
+
 })();
