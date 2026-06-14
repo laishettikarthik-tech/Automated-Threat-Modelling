@@ -114,6 +114,46 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
 
 BASE_DIR = Path(__file__).resolve().parent
+
+# ===========================================================================
+# D2: Structured JSON logging + request correlation ID middleware
+# ===========================================================================
+import logging as _logging
+import uuid as _uuid
+from contextvars import ContextVar as _ContextVar
+
+_request_id_var: _ContextVar[str] = _ContextVar("request_id", default="")
+
+class _JsonFormatter(_logging.Formatter):
+    def format(self, record):
+        import json as _j, time as _t
+        return _j.dumps({
+            "ts":       _t.strftime("%Y-%m-%dT%H:%M:%SZ", _t.gmtime()),
+            "level":    record.levelname,
+            "msg":      record.getMessage(),
+            "module":   record.module,
+            "request_id": _request_id_var.get(""),
+        })
+
+_handler = _logging.StreamHandler()
+_handler.setFormatter(_JsonFormatter())
+_logging.basicConfig(handlers=[_handler], level=_logging.INFO, force=True)
+logger = _logging.getLogger("atm")
+
+
+class RequestIDMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        rid = request.headers.get("X-Request-ID", _uuid.uuid4().hex[:8])
+        _request_id_var.set(rid)
+        import time as _t2
+        t0 = _t2.monotonic()
+        response = await call_next(request)
+        ms = int((_t2.monotonic() - t0) * 1000)
+        logger.info(f"{request.method} {request.url.path} → {response.status_code} ({ms}ms)")
+        response.headers["X-Request-ID"] = rid
+        return response
+
+app.add_middleware(RequestIDMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(RateLimitMiddleware)
 
