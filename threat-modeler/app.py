@@ -1005,6 +1005,39 @@ async def get_templates():
     return _json.loads(tpl_path.read_text())
 
 
+
+# ===========================================================================
+# E5: Custom threat rule CRUD endpoints
+# ===========================================================================
+class CustomRuleIn(BaseModel):
+    name: str
+    description: str = ""
+    category: str = "Custom"
+    title: str
+    severity: str = "Medium"
+    applies_to: list[str] = []
+    mitigations: list[str] = []
+    tags: list[str] = []
+
+@app.post("/api/custom-rules")
+async def create_rule(body: CustomRuleIn, user: dict = Depends(get_current_user)):
+    return domain.create_custom_rule(user["id"], body.dict())
+
+@app.get("/api/custom-rules")
+async def list_rules(user: dict = Depends(get_current_user)):
+    return domain.list_custom_rules(user["id"])
+
+@app.put("/api/custom-rules/{rule_id}")
+async def update_rule(rule_id: int, body: dict, user: dict = Depends(get_current_user)):
+    r = domain.update_custom_rule(rule_id, user["id"], body)
+    if not r: raise HTTPException(404, "Rule not found")
+    return r
+
+@app.delete("/api/custom-rules/{rule_id}")
+async def delete_rule(rule_id: int, user: dict = Depends(get_current_user)):
+    domain.delete_custom_rule(rule_id, user["id"])
+    return {"deleted": True}
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", "8000"))
