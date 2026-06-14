@@ -509,3 +509,70 @@ def list_threat_statuses(threat_model_id: int) -> list[dict]:
             (threat_model_id,)
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# E5: Custom threat rule CRUD
+# ---------------------------------------------------------------------------
+import json as _json
+
+def create_custom_rule(user_id: int, data: dict) -> dict:
+    with db_conn(write=True) as c:
+        c.execute("""
+            INSERT INTO custom_threat_rules
+              (user_id, name, description, category, title, severity, applies_to, mitigations, tags)
+            VALUES (?,?,?,?,?,?,?,?,?)
+        """, (
+            user_id,
+            data.get("name", "Custom Rule"),
+            data.get("description", ""),
+            data.get("category", "Custom"),
+            data.get("title", ""),
+            data.get("severity", "Medium"),
+            _json.dumps(data.get("applies_to", [])),
+            _json.dumps(data.get("mitigations", [])),
+            _json.dumps(data.get("tags", [])),
+        ))
+        rule_id = c.lastrowid
+    return get_custom_rule(rule_id)
+
+def get_custom_rule(rule_id: int) -> dict | None:
+    with db_conn() as c:
+        row = c.execute("SELECT * FROM custom_threat_rules WHERE id=?", (rule_id,)).fetchone()
+    if not row: return None
+    return _parse_custom_rule(dict(row))
+
+def list_custom_rules(user_id: int, enabled_only: bool = False) -> list[dict]:
+    q = "SELECT * FROM custom_threat_rules WHERE user_id=?"
+    if enabled_only: q += " AND enabled=1"
+    q += " ORDER BY created_at DESC"
+    with db_conn() as c:
+        rows = c.execute(q, (user_id,)).fetchall()
+    return [_parse_custom_rule(dict(r)) for r in rows]
+
+def update_custom_rule(rule_id: int, user_id: int, data: dict) -> dict | None:
+    fields = []
+    vals   = []
+    for k, v in data.items():
+        if k in ("name","description","category","title","severity","enabled"):
+            fields.append(f"{k}=?"); vals.append(v)
+        elif k in ("applies_to","mitigations","tags"):
+            fields.append(f"{k}=?"); vals.append(_json.dumps(v))
+    if not fields: return get_custom_rule(rule_id)
+    fields.append("updated_at=datetime('now')")
+    vals += [rule_id, user_id]
+    with db_conn(write=True) as c:
+        c.execute(f"UPDATE custom_threat_rules SET {', '.join(fields)} WHERE id=? AND user_id=?", vals)
+    return get_custom_rule(rule_id)
+
+def delete_custom_rule(rule_id: int, user_id: int) -> bool:
+    with db_conn(write=True) as c:
+        c.execute("DELETE FROM custom_threat_rules WHERE id=? AND user_id=?", (rule_id, user_id))
+    return True
+
+def _parse_custom_rule(row: dict) -> dict:
+    for k in ("applies_to", "mitigations", "tags"):
+        if isinstance(row.get(k), str):
+            try: row[k] = _json.loads(row[k])
+            except Exception: row[k] = []
+    return row
