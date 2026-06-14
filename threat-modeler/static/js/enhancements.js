@@ -668,4 +668,325 @@
     init();
   }
 
+  /* ════════════════════════════════════════════════════════════════════════
+   *  U4 — Keyboard shortcuts for DFD builder
+   * ════════════════════════════════════════════════════════════════════════ */
+  function initKeyboardShortcuts() {
+    document.addEventListener('keydown', e => {
+      // Don't fire inside inputs / textareas
+      if (['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName)) return;
+      if (e.target.isContentEditable) return;
+
+      switch (e.key) {
+        case 'n': document.getElementById('add-component-btn') && document.getElementById('add-component-btn').click(); break;
+        case 'f': document.getElementById('add-flow-btn') && document.getElementById('add-flow-btn').click(); break;
+        case 'b': document.getElementById('add-boundary-btn') && document.getElementById('add-boundary-btn').click(); break;
+        case 'a': document.getElementById('auto-layout-btn') && document.getElementById('auto-layout-btn').click(); break;
+        case '?': showShortcutsHelp(); break;
+        case 'Escape': closeShortcutsHelp(); break;
+        default:
+          if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); document.getElementById('save-project-btn') && document.getElementById('save-project-btn').click(); }
+          break;
+      }
+    });
+
+    // Add ? button to DFD toolbar
+    const toolbar = document.querySelector('#dfd-canvas-wrap')?.previousElementSibling;
+    if (toolbar && !document.getElementById('shortcuts-btn')) {
+      const btn = document.createElement('button');
+      btn.id = 'shortcuts-btn';
+      btn.textContent = '?';
+      btn.title = 'Keyboard shortcuts';
+      btn.style.cssText = 'padding:4px 8px;border:1px solid #e2e8f0;border-radius:5px;font-size:11px;cursor:pointer;background:white;margin-left:4px;';
+      btn.addEventListener('click', showShortcutsHelp);
+      toolbar.querySelector('.flex.items-center.gap-1\.5') && toolbar.querySelector('.flex.items-center.gap-1\.5').appendChild(btn);
+    }
+  }
+
+  function showShortcutsHelp() {
+    if (document.getElementById('shortcuts-modal')) { document.getElementById('shortcuts-modal').style.display = 'flex'; return; }
+    const m = document.createElement('div');
+    m.id = 'shortcuts-modal';
+    m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:80;display:flex;align-items:center;justify-content:center;';
+    m.innerHTML = `<div style="background:white;border-radius:12px;padding:24px;width:360px;box-shadow:0 16px 48px rgba(0,0,0,.2);">
+      <h3 style="font-size:15px;font-weight:700;margin-bottom:14px;">⌨ Keyboard shortcuts</h3>
+      ${[['n','Add component'],['f','Add data flow'],['b','Add trust boundary'],
+         ['a','Auto-layout DFD'],['Ctrl+S','Save project'],['?','Show this help'],['Esc','Close modals']]
+        .map(([k,v])=>`<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f1f5f9;font-size:13px;">
+          <span style="color:#64748b;">${v}</span>
+          <kbd style="background:#f1f5f9;padding:2px 8px;border-radius:4px;font-family:monospace;font-size:11px;">${k}</kbd>
+        </div>`).join('')}
+      <button onclick="document.getElementById('shortcuts-modal').style.display='none'"
+              style="margin-top:14px;width:100%;padding:8px;background:#0f172a;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px;">Close</button>
+    </div>`;
+    m.addEventListener('click', e => { if (e.target === m) m.style.display = 'none'; });
+    document.body.appendChild(m);
+  }
+  function closeShortcutsHelp() {
+    const m = document.getElementById('shortcuts-modal');
+    if (m) m.style.display = 'none';
+  }
+
+  /* ════════════════════════════════════════════════════════════════════════
+   *  U5 — Dark / light mode toggle
+   * ════════════════════════════════════════════════════════════════════════ */
+  function initDarkMode() {
+    const stored = localStorage.getItem('atm-theme') || 'light';
+    document.documentElement.setAttribute('data-theme', stored);
+
+    const btn = document.createElement('button');
+    btn.id = 'theme-toggle';
+    btn.title = 'Toggle dark/light mode';
+    btn.style.cssText = 'background:none;border:none;cursor:pointer;font-size:18px;padding:4px 8px;';
+    btn.textContent = stored === 'dark' ? '☀️' : '🌙';
+    btn.addEventListener('click', () => {
+      const curr = document.documentElement.getAttribute('data-theme');
+      const next = curr === 'dark' ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', next);
+      localStorage.setItem('atm-theme', next);
+      btn.textContent = next === 'dark' ? '☀️' : '🌙';
+    });
+
+    // Inject into header
+    const headerFlex = document.querySelector('header .flex.items-center.gap-3');
+    if (headerFlex) headerFlex.insertBefore(btn, headerFlex.firstChild);
+
+    // Inject minimal dark-mode CSS
+    if (!document.getElementById('dark-mode-style')) {
+      const style = document.createElement('style');
+      style.id = 'dark-mode-style';
+      style.textContent = `
+        [data-theme="dark"] body { background: #0f172a !important; color: #e2e8f0 !important; }
+        [data-theme="dark"] .bg-white { background: #1e293b !important; }
+        [data-theme="dark"] .bg-slate-50 { background: #0f172a !important; }
+        [data-theme="dark"] .border-slate-200 { border-color: #334155 !important; }
+        [data-theme="dark"] .text-slate-900 { color: #f1f5f9 !important; }
+        [data-theme="dark"] .text-slate-500, [data-theme="dark"] .text-slate-600 { color: #94a3b8 !important; }
+        [data-theme="dark"] input, [data-theme="dark"] textarea, [data-theme="dark"] select {
+          background: #1e293b !important; color: #e2e8f0 !important; border-color: #475569 !important;
+        }
+        [data-theme="dark"] .threat-card { background: #1e293b !important; border-color: #334155 !important; }
+        [data-theme="dark"] #dfd-canvas { background: #0f172a !important; }
+      `;
+      document.head.appendChild(style);
+    }
+  }
+
+  /* ════════════════════════════════════════════════════════════════════════
+   *  U2 — Bulk threat status select-all + update
+   * ════════════════════════════════════════════════════════════════════════ */
+  function injectBulkStatusUI(analysis) {
+    const filterBar = document.querySelector('#results .flex.flex-wrap.gap-2.mb-4');
+    if (!filterBar || document.getElementById('bulk-update-btn')) return;
+
+    const selectAll = document.createElement('button');
+    selectAll.id = 'select-all-low';
+    selectAll.textContent = '☑ Select all Low/Info';
+    selectAll.style.cssText = 'font-size:11px;padding:4px 10px;border:1px solid #e2e8f0;border-radius:99px;cursor:pointer;background:white;';
+    selectAll.addEventListener('click', () => {
+      document.querySelectorAll('[data-threat-status-select]').forEach(sel => {
+        const card = sel.closest('[data-threat-sev]');
+        if (card && ['Low','Info'].includes(card.dataset.threatSev)) {
+          sel.value = 'accepted_risk';
+          sel.dispatchEvent(new Event('change'));
+          sel.dataset.selected = '1';
+        }
+      });
+      toast && toast('Low/Info threats selected — click "Bulk save" to apply', 'info');
+    });
+
+    const bulkBtn = document.createElement('button');
+    bulkBtn.id = 'bulk-update-btn';
+    bulkBtn.textContent = '💾 Bulk save';
+    bulkBtn.style.cssText = 'font-size:11px;padding:4px 10px;border:1px solid #6366f1;background:#eff6ff;color:#1e40af;border-radius:99px;cursor:pointer;font-weight:600;';
+    bulkBtn.addEventListener('click', async () => {
+      const tmId = state.currentProjectId;
+      if (!tmId) { toast && toast('Save project first to use bulk update', 'error'); return; }
+      const updates = [];
+      document.querySelectorAll('[data-threat-status-select]').forEach(sel => {
+        if (sel.dataset.selected) {
+          updates.push({ threat_id: sel.dataset.threatId, status: sel.value });
+          delete sel.dataset.selected;
+        }
+      });
+      if (!updates.length) { toast && toast('No threats selected', 'info'); return; }
+      try {
+        bulkBtn.textContent = 'Saving…'; bulkBtn.disabled = true;
+        const r = await fetch('/api/threat-status/bulk', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + TOKEN() },
+          body: JSON.stringify({ threat_model_id: tmId, updates }),
+        });
+        const res = await r.json();
+        toast && toast(`✓ ${res.updated} threats updated`, 'success');
+      } catch (e) {
+        toast && toast('Bulk update failed: ' + e.message, 'error');
+      } finally { bulkBtn.textContent = '💾 Bulk save'; bulkBtn.disabled = false; }
+    });
+
+    filterBar.appendChild(selectAll);
+    filterBar.appendChild(bulkBtn);
+  }
+
+  /* ════════════════════════════════════════════════════════════════════════
+   *  U3 — Share link button
+   * ════════════════════════════════════════════════════════════════════════ */
+  function injectShareButton(analysis) {
+    const dlBar = document.querySelector('#results .flex.gap-2');
+    if (!dlBar || document.getElementById('share-link-btn')) return;
+
+    const btn = document.createElement('button');
+    btn.id = 'share-link-btn';
+    btn.textContent = '🔗 Share';
+    btn.style.cssText = 'padding:6px 12px;font-size:13px;border:1px solid #e2e8f0;border-radius:6px;cursor:pointer;background:white;';
+    btn.addEventListener('click', async () => {
+      const tmId = state.currentProjectId;
+      if (!tmId) { toast && toast('Save the project first to generate a share link', 'error'); return; }
+      try {
+        btn.textContent = 'Generating…'; btn.disabled = true;
+        const r = await fetch(`/api/share/${tmId}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + TOKEN() },
+          body: JSON.stringify({ expires_days: 7 }),
+        });
+        const { url } = await r.json();
+        await navigator.clipboard.writeText(url).catch(() => {});
+        toast && toast('Share link copied to clipboard! Expires in 7 days.', 'success');
+        prompt('Share this link (read-only, 7 days):', url);
+      } catch (e) {
+        toast && toast('Failed to generate share link: ' + e.message, 'error');
+      } finally { btn.textContent = '🔗 Share'; btn.disabled = false; }
+    });
+    dlBar.appendChild(btn);
+  }
+
+  /* ════════════════════════════════════════════════════════════════════════
+   *  ATT&CK badge + Compliance section per threat card
+   * ════════════════════════════════════════════════════════════════════════ */
+  function injectAttackAndCompliance() {
+    document.querySelectorAll('[data-threat-idx]').forEach(card => {
+      if (card.querySelector('.attack-badge')) return;
+      const idx = card.dataset.threatIdx;
+      const t = state.lastAnalysis && state.lastAnalysis.threats && state.lastAnalysis.threats[+idx];
+      if (!t) return;
+
+      // ATT&CK badge
+      if (t.attack) {
+        const badge = document.createElement('a');
+        badge.className = 'attack-badge';
+        badge.href = `https://attack.mitre.org/techniques/${t.attack.id.replace('.','/')}/`;
+        badge.target = '_blank';
+        badge.rel = 'noopener';
+        badge.style.cssText = 'display:inline-flex;align-items:center;gap:4px;font-size:10px;padding:2px 8px;background:#1e0936;color:#c4b5fd;border:1px solid #6d28d9;border-radius:99px;text-decoration:none;margin-left:4px;';
+        badge.innerHTML = `🎯 ${esc(t.attack.id)} · ${esc(t.attack.tactic)}`;
+        const header = card.querySelector('.threat-card-header') || card.querySelector('.flex.items-center.gap-1');
+        if (header) header.appendChild(badge);
+      }
+
+      // Compliance in expanded body
+      if (t.compliance && Object.keys(t.compliance).length) {
+        const body = card.querySelector('.threat-card-body, .threat-card-detail');
+        if (body && !body.querySelector('.compliance-section')) {
+          const div = document.createElement('div');
+          div.className = 'compliance-section';
+          div.style.cssText = 'margin-top:10px;padding:8px 12px;background:#f8fafc;border-radius:6px;border:1px solid #e2e8f0;font-size:11px;';
+          div.innerHTML = '<div style="font-weight:600;color:#475569;margin-bottom:5px;text-transform:uppercase;letter-spacing:.04em;">📋 Compliance controls</div>' +
+            Object.entries(t.compliance).map(([fw, ids]) =>
+              `<div style="margin-bottom:3px;"><span style="color:#64748b;font-weight:600;">${esc(fw.toUpperCase())}:</span> ${ids.map(id => `<code style="background:#eff6ff;color:#1e40af;padding:1px 5px;border-radius:3px;font-size:10px;">${esc(id)}</code>`).join(' ')}</div>`
+            ).join('');
+          body.appendChild(div);
+        }
+      }
+    });
+  }
+
+  /* ════════════════════════════════════════════════════════════════════════
+   *  P2 — "Fix this" AI code snippet button per threat
+   * ════════════════════════════════════════════════════════════════════════ */
+  function injectFixButtons() {
+    document.querySelectorAll('[data-threat-idx]').forEach(card => {
+      if (card.querySelector('.fix-btn')) return;
+      const idx = card.dataset.threatIdx;
+      const header = card.querySelector('.threat-card-header') || card.querySelector('.flex.items-center');
+      if (!header) return;
+
+      const btn = document.createElement('button');
+      btn.className = 'fix-btn';
+      btn.textContent = '🔧 Fix';
+      btn.title = 'Generate AI code fix for this threat';
+      btn.style.cssText = 'background:none;border:1px solid #e2e8f0;border-radius:4px;padding:2px 7px;cursor:pointer;font-size:11px;margin-left:4px;flex-shrink:0;';
+      btn.addEventListener('click', async e => {
+        e.stopPropagation();
+        const t = state.lastAnalysis && state.lastAnalysis.threats && state.lastAnalysis.threats[+idx];
+        if (!t) return;
+        btn.textContent = '⏳'; btn.disabled = true;
+        try {
+          const r = await fetch('/api/threat/fix', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + TOKEN() },
+            body: JSON.stringify({ threat: t, system_name: state.systemName || 'System', tech_stack: state.systemDesc || '' }),
+          });
+          if (!r.ok) { const err = await r.json(); throw new Error(err.detail); }
+          const fix = await r.json();
+          showFixModal(t.title, fix);
+        } catch (err) {
+          toast && toast('Fix generation failed: ' + err.message, 'error');
+        } finally { btn.textContent = '🔧 Fix'; btn.disabled = false; }
+      });
+      header.appendChild(btn);
+    });
+  }
+
+  function showFixModal(title, fix) {
+    let modal = document.getElementById('fix-modal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'fix-modal';
+      modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:80;display:flex;align-items:center;justify-content:center;padding:16px;';
+      modal.addEventListener('click', e => { if (e.target === modal) modal.style.display = 'none'; });
+      document.body.appendChild(modal);
+    }
+    modal.style.display = 'flex';
+    modal.innerHTML = `<div style="background:white;border-radius:14px;width:100%;max-width:680px;max-height:85vh;overflow-y:auto;padding:24px;box-shadow:0 20px 60px rgba(0,0,0,.2);">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;">
+        <div>
+          <div style="font-size:15px;font-weight:700;color:#0f172a;">🔧 AI-generated fix</div>
+          <div style="font-size:12px;color:#64748b;margin-top:2px;">${esc(title)}</div>
+        </div>
+        <button onclick="document.getElementById('fix-modal').style.display='none'"
+                style="background:none;border:none;font-size:18px;cursor:pointer;color:#94a3b8;">✕</button>
+      </div>
+      <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:10px 14px;font-size:13px;color:#15803d;margin-bottom:14px;">
+        ${esc(fix.explanation || '')}
+      </div>
+      <div style="font-size:12px;font-weight:600;color:#ef4444;margin-bottom:6px;">Before (vulnerable)</div>
+      <pre style="background:#0f172a;color:#e2e8f0;padding:14px;border-radius:8px;font-size:12px;overflow-x:auto;margin-bottom:12px;">${esc(fix.before || '')}</pre>
+      <div style="font-size:12px;font-weight:600;color:#16a34a;margin-bottom:6px;">After (fixed)</div>
+      <pre style="background:#0f172a;color:#e2e8f0;padding:14px;border-radius:8px;font-size:12px;overflow-x:auto;margin-bottom:12px;">${esc(fix.after || '')}</pre>
+      ${fix.diff_summary ? `<div style="font-size:12px;color:#475569;background:#f8fafc;border-radius:6px;padding:10px 14px;">${esc(fix.diff_summary)}</div>` : ''}
+      <button onclick="navigator.clipboard.writeText(${JSON.stringify(fix.after || '')}).then(()=>{ this.textContent='✓ Copied'; setTimeout(()=>{this.textContent='Copy fixed code'},2000) })"
+              style="margin-top:14px;width:100%;padding:9px;background:#0f172a;color:white;border:none;border-radius:6px;cursor:pointer;font-size:13px;">Copy fixed code</button>
+    </div>`;
+  }
+
+  /* ── patch renderResults to wire in new UI pieces ── */
+  const _prevRR = window.renderResults;
+  window.renderResults = function(analysis) {
+    _prevRR && _prevRR.call(this, analysis);
+    injectBulkStatusUI(analysis);
+    injectShareButton(analysis);
+    setTimeout(() => {
+      injectAttackAndCompliance();
+      injectFixButtons();
+    }, 350);
+  };
+
+  /* ── init on load ── */
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => { initKeyboardShortcuts(); initDarkMode(); });
+  } else {
+    initKeyboardShortcuts(); initDarkMode();
+  }
+
+
 })();
