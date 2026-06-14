@@ -24,6 +24,25 @@ jobs:
       - name: Install dependencies
         run: pip install -r threat-modeler/requirements.txt httpx
 
+
+      - name: Scan dependencies for CVEs
+        run: |
+          pip install pip-audit
+          pip-audit -r threat-modeler/requirements.txt --format json -o /tmp/audit.json || true
+          python3 -c "
+import json, sys
+data = json.load(open('/tmp/audit.json'))
+vulns = data.get('dependencies', []) if isinstance(data, dict) else data
+found = [d for d in vulns if d.get('vulns')]
+if found:
+    print(f\"::warning::Found {len(found)} packages with known CVEs\")
+    for d in found:
+        for v in d.get('vulns', []):
+            print(f\"  {d.get('name')} {d.get('version')}: {v.get('id')} — {v.get('description','')[:80]}\")
+else:
+    print('No known CVEs found in dependencies')
+"
+
       - name: Run threat model analysis
         id: atm
         env:
