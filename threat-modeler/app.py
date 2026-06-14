@@ -1038,6 +1038,114 @@ async def delete_rule(rule_id: int, user: dict = Depends(get_current_user)):
     domain.delete_custom_rule(rule_id, user["id"])
     return {"deleted": True}
 
+
+# ===========================================================================
+# U2: Bulk threat status update
+# ===========================================================================
+class BulkStatusItem(BaseModel):
+    threat_id: str
+    status: str
+    owner: str | None = None
+    due_date: str | None = None
+
+class BulkStatusRequest(BaseModel):
+    threat_model_id: int
+    updates: list[BulkStatusItem]
+
+@app.post("/api/threat-status/bulk")
+async def bulk_update_status(req: BulkStatusRequest, user: dict = Depends(get_current_user)):
+    """Update multiple threat statuses in one call."""
+    tm = domain.get_threat_model(req.threat_model_id)
+    if not tm: raise HTTPException(404, "Threat model not found")
+    ensure_can_access_threat_model(user, tm)
+    updated = []
+    for item in req.updates:
+        try:
+            r = domain.upsert_threat_status(
+                req.threat_model_id, item.threat_id, item.status,
+                updated_by=user["id"], owner=item.owner, due_date=item.due_date
+            )
+            updated.append(r)
+        except Exception as e:
+            updated.append({"threat_id": item.threat_id, "error": str(e)})
+    return {"updated": len(updated), "results": updated}
+
+
+# ===========================================================================
+# U3: Share-link for read-only threat model
+# ===========================================================================
+import secrets as _secrets
+from datetime import datetime as _dt, timedelta as _td
+
+@app.post("/api/share/{threat_model_id}")
+async def create_share_link(
+    threat_model_id: int,
+    request: Request,
+    user: dict = Depends(get_current_user),
+):
+    """Generate a time-limited shareable URL for a threat model report."""
+    tm = domain.get_threat_model(threat_model_id)
+    if not tm: raise HTTPException(404, "Threat model not found")
+    ensure_can_access_threat_model(user, tm)
+    body = await request.json()
+    expires_days = int(body.get("expires_days", 7))
+    token = _secrets.token_urlsafe(24)
+    expires_at = (_dt.utcnow() + _td(days=expires_days)).isoformat()
+    # Store in DB (idempotent - create table if not exists)
+    with domain.db_conn(write=True) as c:
+        try:
+            c.execute("""CREATE TABLE IF NOT EXISTS share_tokens (
+                token TEXT PRIMARY KEY, threat_model_id INTEGER NOT NULL,
+                created_by INTEGER NOT NULL, expires_at TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )""")
+        except Exception:
+            pass
+        c.execute(
+            "INSERT INTO share_tokens (token, threat_model_id, created_by, expires_at) VALUES (?,?,?,?)",
+            (token, threat_model_id, user["id"], expires_at)
+        )
+    base_url = str(request.base_url).rstrip("/")
+    return {"url": f"{base_url}/share/{token}", "expires_at": expires_at, "token": token}
+
+
+@app.get("/share/{token}", include_in_schema=False)
+async def view_shared_report(token: str):
+    """Serve a read-only HTML report for a share token (no auth required)."""
+    from threat_engine.html_report import generate_html_report
+    with domain.db_conn() as c:
+        row = c.execute(
+            "SELECT * FROM share_tokens WHERE token=?", (token,)
+        ).fetchone()
+    if not row:
+        raise HTTPException(404, "Share link not found or expired")
+    row = dict(row)
+    from datetime import datetime as _dt2
+    if _dt2.utcnow().isoformat() > row["expires_at"]:
+        raise HTTPException(410, "Share link has expired")
+    tm = domain.get_threat_model(row["threat_model_id"])
+    if not tm:
+        raise HTTPException(404, "Threat model not found")
+    html = generate_html_report(tm)
+    return HTMLResponse(content=html)
+
+
+# ===========================================================================
+# D3: Health check + readiness endpoints
+# ===========================================================================
+@app.get("/healthz", include_in_schema=False)
+async def healthz():
+    return {"status": "ok", "version": "2.1"}
+
+@app.get("/readyz", include_in_schema=False)
+async def readyz():
+    try:
+        with domain.db_conn() as c:
+            c.execute("SELECT 1")
+        return {"status": "ready", "db": "ok"}
+    except Exception as e:
+        raise HTTPException(503, f"DB not ready: {e}")
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", "8000"))
