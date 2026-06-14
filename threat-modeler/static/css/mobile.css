@@ -62,3 +62,59 @@
   .dfd-node rect, .dfd-node line { stroke-width: 2 !important; }
   .dfd-node text { font-size: 13px !important; }
 }
+
+/* ==========================================================================
+   U5: Dark mode theme variables
+   ========================================================================== */
+[data-theme="dark"] {
+  color-scheme: dark;
+}
+[data-theme="dark"] body {
+  background: #0f172a !important;
+  color: #e2e8f0 !important;
+}
+[data-theme="dark"] header {
+  background: #020617 !important;
+}
+[data-theme="dark"] .bg-white,
+[data-theme="dark"] [class*="bg-white"] {
+  background: #1e293b !important;
+}
+[data-theme="dark"] .bg-slate-50,
+[data-theme="dark"] .bg-slate-100 {
+  background: #111827 !important;
+}
+[data-theme="dark"] .border-slate-200,
+[data-theme="dark"] .border-slate-100 {
+  border-color: #334155 !important;
+}
+[data-theme="dark"] .text-slate-900,
+[data-theme="dark"] .text-slate-800 {
+  color: #f1f5f9 !important;
+}
+[data-theme="dark"] .text-slate-600,
+[data-theme="dark"] .text-slate-500,
+[data-theme="dark"] .text-slate-400 {
+  color: #94a3b8 !important;
+}
+[data-theme="dark"] input,
+[data-theme="dark"] textarea,
+[data-theme="dark"] select {
+  background: #1e293b !important;
+  color: #e2e8f0 !important;
+  border-color: #475569 !important;
+}
+[data-theme="dark"] .threat-card {
+  background: #1e293b !important;
+  border-color: #334155 !important;
+}
+[data-theme="dark"] #dfd-canvas-wrap {
+  background: #111827 !important;
+}
+[data-theme="dark"] .shadow-sm {
+  box-shadow: 0 1px 3px rgba(0,0,0,.4) !important;
+}
+[data-theme="dark"] label > div {
+  background: #1e293b !important;
+  border-color: #475569 !important;
+}
