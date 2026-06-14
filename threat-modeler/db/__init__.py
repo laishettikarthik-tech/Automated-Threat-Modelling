@@ -349,3 +349,35 @@ CREATE TABLE IF NOT EXISTS custom_threat_rules (
 );
 CREATE INDEX IF NOT EXISTS idx_custom_rules_user ON custom_threat_rules(user_id);
 """
+
+# ===========================================================================
+# D1: PostgreSQL support — set DATABASE_URL env var to switch from SQLite
+# Falls back to SQLite for local dev when DATABASE_URL is not set.
+# ===========================================================================
+import os as _os
+_DATABASE_URL = _os.getenv("DATABASE_URL", "")
+
+def db_conn_pg(write: bool = False):
+    """psycopg2 connection context manager (PostgreSQL)."""
+    import psycopg2
+    import psycopg2.extras
+    conn = psycopg2.connect(_DATABASE_URL)
+    conn.autocommit = False
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            yield cur
+        if write:
+            conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+# Patch db_conn to use Postgres when DATABASE_URL is set
+if _DATABASE_URL and _DATABASE_URL.startswith("postgresql"):
+    _orig_db_conn = db_conn
+    def db_conn(write: bool = False):  # noqa: F811
+        return db_conn_pg(write=write)
+    print("[db] Using PostgreSQL:", _DATABASE_URL.split("@")[-1])
+
