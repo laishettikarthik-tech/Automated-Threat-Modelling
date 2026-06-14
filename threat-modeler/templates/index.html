@@ -178,6 +178,7 @@
         <button data-tab="text"    class="tab-btn tab-active">📝 Text description</button>
         <button data-tab="diagram" class="tab-btn">🖼️ Upload diagram</button>
         <button data-tab="builder" class="tab-btn">🔧 Component builder</button>
+        <button data-tab="rules" class="tab-btn">⚙️ Custom rules</button>
       </div>
     </div>
 
@@ -263,6 +264,59 @@
             <div class="flex gap-2.5"><span class="text-lg flex-shrink-0">🏗️</span><div><strong class="text-slate-700">Infrastructure diagrams</strong> — Kubernetes cluster maps, network topology</div></div>
             <div class="flex gap-2.5"><span class="text-lg flex-shrink-0">✅</span><div><strong class="text-slate-700">Clear labels</strong> — Readable component names improve accuracy</div></div>
             <div class="border-t border-slate-200 pt-3 text-xs text-slate-500">After extraction, review and edit components in the builder tab before running threat analysis.</div>
+          </div>
+        </div>
+      </div>
+
+
+      <!-- Tab 4: Custom threat rules editor -->
+      <div id="tab-rules" class="tab-panel hidden">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <!-- Rule form -->
+          <div class="space-y-3">
+            <h3 class="text-sm font-semibold">Add custom threat rule</h3>
+            <div>
+              <label class="block text-xs font-medium text-slate-500 mb-1">Rule name</label>
+              <input id="rule-name" type="text" placeholder="e.g. Internal API — no auth" class="w-full rounded border-slate-300 border px-3 py-2 text-sm"/>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-500 mb-1">Threat title</label>
+              <input id="rule-title" type="text" placeholder="e.g. Unauthenticated internal API call" class="w-full rounded border-slate-300 border px-3 py-2 text-sm"/>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs font-medium text-slate-500 mb-1">Severity</label>
+                <select id="rule-severity" class="w-full rounded border-slate-300 border px-3 py-2 text-sm">
+                  <option>Critical</option><option>High</option><option selected>Medium</option><option>Low</option><option>Info</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-slate-500 mb-1">Category</label>
+                <input id="rule-category" type="text" placeholder="e.g. Auth" class="w-full rounded border-slate-300 border px-3 py-2 text-sm" value="Custom"/>
+              </div>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-500 mb-1">Description</label>
+              <textarea id="rule-description" rows="2" class="w-full rounded border-slate-300 border px-3 py-2 text-sm" placeholder="What is this threat?"></textarea>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-500 mb-1">Mitigations (one per line)</label>
+              <textarea id="rule-mitigations" rows="3" class="w-full rounded border-slate-300 border px-3 py-2 text-sm" placeholder="Require auth header on all internal calls&#10;Log all internal API access&#10;..."></textarea>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-500 mb-1">Applies to component types (comma-separated, leave blank for all)</label>
+              <input id="rule-applies-to" type="text" placeholder="api, webapp, admin_panel" class="w-full rounded border-slate-300 border px-3 py-2 text-sm"/>
+            </div>
+            <button id="save-custom-rule-btn" class="px-4 py-2 bg-slate-900 text-white rounded text-sm hover:bg-slate-700 w-full">
+              + Save rule
+            </button>
+          </div>
+          <!-- Rules list -->
+          <div>
+            <h3 class="text-sm font-semibold mb-3">Saved rules <span class="text-slate-400 font-normal" id="rules-count">(0)</span></h3>
+            <div id="custom-rules-list" class="space-y-2">
+              <p class="text-xs text-slate-400">No custom rules yet. Add one to augment the built-in threat analysis.</p>
+            </div>
           </div>
         </div>
       </div>
