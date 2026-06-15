@@ -492,77 +492,10 @@ def _cvss40_for_threat(threat: dict, component: dict, flow: dict | None,
     }
 
 
-
-# ---------------------------------------------------------------------------
-# E2: MITRE ATT&CK mapping — CWE → Technique + Tactic
-# ---------------------------------------------------------------------------
-CWE_TO_ATTACK: dict[str, dict] = {
-    "CWE-20":  {"id": "T1190", "tactic": "Initial Access",        "name": "Exploit Public-Facing Application"},
-    "CWE-22":  {"id": "T1083", "tactic": "Discovery",             "name": "File and Directory Discovery"},
-    "CWE-78":  {"id": "T1059", "tactic": "Execution",             "name": "Command and Scripting Interpreter"},
-    "CWE-79":  {"id": "T1059.007","tactic":"Execution",           "name": "JavaScript / XSS"},
-    "CWE-89":  {"id": "T1190", "tactic": "Initial Access",        "name": "Exploit Public-Facing Application"},
-    "CWE-200": {"id": "T1552", "tactic": "Credential Access",     "name": "Unsecured Credentials"},
-    "CWE-209": {"id": "T1082", "tactic": "Discovery",             "name": "System Information Discovery"},
-    "CWE-269": {"id": "T1078", "tactic": "Privilege Escalation",  "name": "Valid Accounts"},
-    "CWE-284": {"id": "T1548", "tactic": "Privilege Escalation",  "name": "Abuse Elevation Control Mechanism"},
-    "CWE-285": {"id": "T1078", "tactic": "Defense Evasion",       "name": "Valid Accounts"},
-    "CWE-287": {"id": "T1110", "tactic": "Credential Access",     "name": "Brute Force"},
-    "CWE-306": {"id": "T1078.004","tactic":"Initial Access",      "name": "Cloud Accounts"},
-    "CWE-311": {"id": "T1557", "tactic": "Collection",            "name": "Adversary-in-the-Middle"},
-    "CWE-319": {"id": "T1040", "tactic": "Credential Access",     "name": "Network Sniffing"},
-    "CWE-345": {"id": "T1195", "tactic": "Initial Access",        "name": "Supply Chain Compromise"},
-    "CWE-352": {"id": "T1185", "tactic": "Collection",            "name": "Browser Session Hijacking"},
-    "CWE-400": {"id": "T1499", "tactic": "Impact",                "name": "Endpoint Denial of Service"},
-    "CWE-434": {"id": "T1105", "tactic": "Command and Control",   "name": "Ingress Tool Transfer"},
-    "CWE-502": {"id": "T1190", "tactic": "Initial Access",        "name": "Exploit Public-Facing Application"},
-    "CWE-522": {"id": "T1552", "tactic": "Credential Access",     "name": "Unsecured Credentials"},
-    "CWE-601": {"id": "T1566", "tactic": "Initial Access",        "name": "Phishing"},
-    "CWE-611": {"id": "T1190", "tactic": "Initial Access",        "name": "Exploit Public-Facing Application"},
-    "CWE-639": {"id": "T1548", "tactic": "Privilege Escalation",  "name": "Abuse Elevation Control Mechanism"},
-    "CWE-732": {"id": "T1222", "tactic": "Defense Evasion",       "name": "File and Directory Permissions Modification"},
-    "CWE-776": {"id": "T1499", "tactic": "Impact",                "name": "Endpoint Denial of Service"},
-    "CWE-798": {"id": "T1552.001","tactic":"Credential Access",   "name": "Credentials In Files"},
-    "CWE-918": {"id": "T1090", "tactic": "Command and Control",   "name": "Proxy"},
-}
-
-
-# ---------------------------------------------------------------------------
-# E4 / P3: SOC2 / ISO 27001 / PCI-DSS compliance control mapping
-# ---------------------------------------------------------------------------
-COMPLIANCE_MAPPING: dict[str, dict] = {
-    "CWE-20":  {"soc2": ["CC8.1"],            "iso27001": ["A.14.2.5"],          "pci_dss": ["6.3"]},
-    "CWE-22":  {"soc2": ["CC6.6"],            "iso27001": ["A.12.6.1"],          "pci_dss": ["6.3.1"]},
-    "CWE-79":  {"soc2": ["CC8.1"],            "iso27001": ["A.14.2.5"],          "pci_dss": ["6.3.2"]},
-    "CWE-89":  {"soc2": ["CC8.1"],            "iso27001": ["A.14.2.5"],          "pci_dss": ["6.3.1"]},
-    "CWE-200": {"soc2": ["CC6.7"],            "iso27001": ["A.8.2.3"],           "pci_dss": ["3.1", "7.1"]},
-    "CWE-209": {"soc2": ["CC7.2"],            "iso27001": ["A.12.6.1"],          "pci_dss": ["6.3"]},
-    "CWE-269": {"soc2": ["CC6.3"],            "iso27001": ["A.9.2.3"],           "pci_dss": ["7.1", "7.2"]},
-    "CWE-285": {"soc2": ["CC6.2", "CC6.3"],   "iso27001": ["A.9.4.1"],           "pci_dss": ["7.1"]},
-    "CWE-287": {"soc2": ["CC6.1", "CC6.2"],   "iso27001": ["A.9.2.1", "A.9.4.2"],"pci_dss": ["8.2", "8.6"]},
-    "CWE-306": {"soc2": ["CC6.1"],            "iso27001": ["A.9.4.2"],           "pci_dss": ["8.2"]},
-    "CWE-311": {"soc2": ["CC6.7"],            "iso27001": ["A.10.1.1"],          "pci_dss": ["3.4", "4.1"]},
-    "CWE-319": {"soc2": ["CC6.7"],            "iso27001": ["A.10.1.1"],          "pci_dss": ["4.1"]},
-    "CWE-345": {"soc2": ["CC7.2"],            "iso27001": ["A.12.2.1"],          "pci_dss": ["6.3"]},
-    "CWE-352": {"soc2": ["CC6.6"],            "iso27001": ["A.14.1.2"],          "pci_dss": ["6.3.2"]},
-    "CWE-400": {"soc2": ["A1.1", "A1.2"],     "iso27001": ["A.17.1.1"],          "pci_dss": ["6.3"]},
-    "CWE-434": {"soc2": ["CC8.1"],            "iso27001": ["A.12.2.1"],          "pci_dss": ["6.3"]},
-    "CWE-522": {"soc2": ["CC6.1"],            "iso27001": ["A.9.2.4"],           "pci_dss": ["8.2.1"]},
-    "CWE-601": {"soc2": ["CC9.2"],            "iso27001": ["A.7.2.2"],           "pci_dss": ["12.6"]},
-    "CWE-639": {"soc2": ["CC6.3"],            "iso27001": ["A.9.4.1"],           "pci_dss": ["7.2"]},
-    "CWE-798": {"soc2": ["CC6.1"],            "iso27001": ["A.9.2.4"],           "pci_dss": ["8.2.1"]},
-    "CWE-918": {"soc2": ["CC6.6"],            "iso27001": ["A.13.1.3"],          "pci_dss": ["1.3"]},
-}
-
 def enrich_threat_with_scoring(threat: dict, component: dict, flow: dict | None,
                                cross_boundary: bool = False) -> dict:
-    """Add cvss31, cvss40, cwe, attack, compliance to a threat in-place."""
+    """Add cvss31, cvss40, cwe to a threat in-place. Returns the same dict."""
     threat["cvss31"] = _cvss31_for_threat(threat, component, flow, cross_boundary)
     threat["cvss40"] = _cvss40_for_threat(threat, component, flow, cross_boundary)
-    threat["cwe"]    = _cwe_for_threat(threat, component)
-    # E2: MITRE ATT&CK mapping
-    cwe_id = (threat.get("cwe") or {}).get("id", "")
-    threat["attack"] = CWE_TO_ATTACK.get(cwe_id)
-    # P3: Compliance control mapping
-    threat["compliance"] = COMPLIANCE_MAPPING.get(cwe_id, {})
+    threat["cwe"] = _cwe_for_threat(threat, component)
     return threat
