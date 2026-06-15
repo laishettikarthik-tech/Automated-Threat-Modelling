@@ -1,3 +1,26 @@
+
+# E5: Custom threat rules table
+INIT_SQL_CUSTOM_RULES = """
+CREATE TABLE IF NOT EXISTS custom_threat_rules (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL,
+    name TEXT NOT NULL, title TEXT NOT NULL, severity TEXT NOT NULL DEFAULT 'Medium',
+    category TEXT NOT NULL DEFAULT 'Custom', description TEXT NOT NULL DEFAULT '',
+    applies_to TEXT NOT NULL DEFAULT '[]', mitigations TEXT NOT NULL DEFAULT '[]',
+    tags TEXT NOT NULL DEFAULT '[]', enabled INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_custom_rules_user ON custom_threat_rules(user_id);
+"""
+
+# U3: Share tokens table
+INIT_SQL_SHARE_TOKENS = """
+CREATE TABLE IF NOT EXISTS share_tokens (
+    token TEXT PRIMARY KEY, threat_model_id INTEGER NOT NULL,
+    created_by INTEGER NOT NULL, expires_at TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+"""
 """Database layer.
 
 Currently SQLite for POC. Designed to be swapped to PostgreSQL with minimal
@@ -206,6 +229,9 @@ CREATE INDEX IF NOT EXISTS idx_refresh_hash ON refresh_tokens(token_hash);
 
 
 def init_db():
+    _run_migration(INIT_SQL_CUSTOM_RULES)
+    _run_migration(INIT_SQL_SHARE_TOKENS)
+
     """Create tables if they don't exist. Idempotent — safe to call on every startup."""
     with db_conn(write=True) as c:
         c.executescript(SCHEMA)
