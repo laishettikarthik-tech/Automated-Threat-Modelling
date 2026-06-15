@@ -27,6 +27,67 @@ from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr, Field
 
+# ---------------------------------------------------------------------------
+# Security headers + rate limiting + request ID + JSON logging
+# ---------------------------------------------------------------------------
+_request_id_var: _ContextVar[str] = _ContextVar("request_id", default="")
+
+class _JsonFormatter(_logging.Formatter):
+    def format(self, record):
+        import time as _t
+        return json.dumps({"ts": _t.strftime("%Y-%m-%dT%H:%M:%SZ", _t.gmtime()),
+                           "level": record.levelname, "msg": record.getMessage(),
+                           "request_id": _request_id_var.get("")})
+
+_handler = _logging.StreamHandler()
+_handler.setFormatter(_JsonFormatter())
+_logging.basicConfig(handlers=[_handler], level=_logging.INFO, force=True)
+logger = _logging.getLogger("atm")
+
+_rate_store: dict = {}
+def _rate_limit(key: str, limit: int, window: int) -> bool:
+    import time as _t2
+    now = _t2.time()
+    _rate_store[key] = [t for t in _rate_store.get(key, []) if now - t < window]
+    if len(_rate_store[key]) >= limit: return False
+    _rate_store[key].append(now); return True
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        if request.url.scheme == "https":
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        return response
+
+class RateLimitMiddleware(BaseHTTPMiddleware):
+    LIMITS = {"/api/auth/login": (10, 60), "/api/auth/register": (5, 60)}
+    async def dispatch(self, request, call_next):
+        path = request.url.path
+        if path in self.LIMITS:
+            limit, window = self.LIMITS[path]
+            ip = request.client.host if request.client else "unknown"
+            if not _rate_limit(f"rl:{path}:{ip}", limit, window):
+                return Response(content='{"detail":"Too many requests"}', status_code=429, media_type="application/json")
+        return await call_next(request)
+
+class RequestIDMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        import time as _t3
+        rid = request.headers.get("X-Request-ID", _uuid.uuid4().hex[:8])
+        _request_id_var.set(rid)
+        t0 = _t3.monotonic()
+        response = await call_next(request)
+        ms = int((_t3.monotonic() - t0) * 1000)
+        logger.info(f"{request.method} {request.url.path} → {response.status_code} ({ms}ms)")
+        response.headers["X-Request-ID"] = rid
+        return response
+
+
+
 # Initialize DB before anything else imports from it
 from db import init_db, db_conn, audit
 init_db()
@@ -72,6 +133,10 @@ class LoginRequest(BaseModel):
     email: EmailStr
     password: str
 
+
+app.add_middleware(RequestIDMiddleware)
+app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(RateLimitMiddleware)
 
 @app.post("/api/auth/register")
 async def auth_register(req: RegisterRequest, request: Request):
@@ -753,3 +818,172 @@ if __name__ == "__main__":
     print(f"  JWT_SECRET:      {'set' if os.getenv('JWT_SECRET') else 'NOT SET (sessions reset on restart)'}")
     print(f"  Initial admin:   {'configured' if os.getenv('INITIAL_ADMIN_EMAIL') else 'not configured'}\n")
     uvicorn.run("app:app", host=host, port=port, reload=False)
+
+# ---------------------------------------------------------------------------
+# Health checks
+# ---------------------------------------------------------------------------
+@app.get("/healthz", include_in_schema=False)
+async def healthz(): return {"status": "ok", "version": "2.1"}
+
+@app.get("/readyz", include_in_schema=False)
+async def readyz():
+    try:
+        with db_conn() as c: c.execute("SELECT 1")
+        return {"status": "ready", "db": "ok"}
+    except Exception as e: raise HTTPException(503, f"DB not ready: {e}")
+
+
+# ---------------------------------------------------------------------------
+# Custom threat rules (E5)
+# ---------------------------------------------------------------------------
+class CustomRuleIn(BaseModel):
+    name: str; title: str; severity: str = "Medium"; category: str = "Custom"
+    description: str = ""; applies_to: list[str] = []; mitigations: list[str] = []; tags: list[str] = []
+
+@app.post("/api/custom-rules")
+async def create_rule(body: CustomRuleIn, user: dict = Depends(get_current_user)):
+    return domain.create_custom_rule(user["id"], body.dict())
+
+@app.get("/api/custom-rules")
+async def list_rules(user: dict = Depends(get_current_user)):
+    return domain.list_custom_rules(user["id"])
+
+@app.put("/api/custom-rules/{rule_id}")
+async def update_rule(rule_id: int, body: dict, user: dict = Depends(get_current_user)):
+    r = domain.update_custom_rule(rule_id, user["id"], body)
+    if not r: raise HTTPException(404, "Rule not found"); return r
+
+@app.delete("/api/custom-rules/{rule_id}")
+async def delete_rule(rule_id: int, user: dict = Depends(get_current_user)):
+    domain.delete_custom_rule(rule_id, user["id"]); return {"deleted": True}
+
+
+# ---------------------------------------------------------------------------
+# Bulk threat status (U2)
+# ---------------------------------------------------------------------------
+class BulkStatusItem(BaseModel):
+    threat_id: str; status: str; owner: str | None = None; due_date: str | None = None
+
+class BulkStatusRequest(BaseModel):
+    threat_model_id: int; updates: list[BulkStatusItem]
+
+@app.post("/api/threat-status/bulk")
+async def bulk_update_status(req: BulkStatusRequest, user: dict = Depends(get_current_user)):
+    tm = domain.get_threat_model(req.threat_model_id)
+    if not tm: raise HTTPException(404, "Not found")
+    ensure_can_access_threat_model(user, tm)
+    updated = []
+    for item in req.updates:
+        try: updated.append(domain.upsert_threat_status(req.threat_model_id, item.threat_id, item.status, updated_by=user["id"], owner=item.owner, due_date=item.due_date))
+        except Exception as e: updated.append({"threat_id": item.threat_id, "error": str(e)})
+    return {"updated": len(updated), "results": updated}
+
+
+# ---------------------------------------------------------------------------
+# Share link (U3)
+# ---------------------------------------------------------------------------
+@app.post("/api/share/{threat_model_id}")
+async def create_share_link(threat_model_id: int, request: Request, user: dict = Depends(get_current_user)):
+    tm = domain.get_threat_model(threat_model_id)
+    if not tm: raise HTTPException(404, "Not found")
+    ensure_can_access_threat_model(user, tm)
+    body = await request.json()
+    token = _secrets.token_urlsafe(24)
+    expires_at = (_dt.utcnow() + _td(days=int(body.get("expires_days", 7)))).isoformat()
+    with domain.db_conn(write=True) as c:
+        try: c.execute("CREATE TABLE IF NOT EXISTS share_tokens (token TEXT PRIMARY KEY, threat_model_id INTEGER NOT NULL, created_by INTEGER NOT NULL, expires_at TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')))")
+        except Exception: pass
+        c.execute("INSERT INTO share_tokens (token, threat_model_id, created_by, expires_at) VALUES (?,?,?,?)", (token, threat_model_id, user["id"], expires_at))
+    base_url = str(request.base_url).rstrip("/")
+    return {"url": f"{base_url}/share/{token}", "expires_at": expires_at, "token": token}
+
+@app.get("/share/{token}", include_in_schema=False)
+async def view_shared_report(token: str):
+    from threat_engine.html_report import generate_html_report
+    with domain.db_conn() as c:
+        row = c.execute("SELECT * FROM share_tokens WHERE token=?", (token,)).fetchone()
+    if not row: raise HTTPException(404, "Share link not found")
+    row = dict(row)
+    if _dt.utcnow().isoformat() > row["expires_at"]: raise HTTPException(410, "Share link has expired")
+    tm = domain.get_threat_model(row["threat_model_id"])
+    if not tm: raise HTTPException(404, "Not found")
+    return HTMLResponse(content=generate_html_report(tm))
+
+
+# ---------------------------------------------------------------------------
+# Release diff (P1)
+# ---------------------------------------------------------------------------
+@app.get("/api/releases/{id1}/diff/{id2}")
+async def diff_releases(id1: int, id2: int, user: dict = Depends(get_current_user)):
+    tm1 = domain.get_threat_model(id1); tm2 = domain.get_threat_model(id2)
+    if not tm1 or not tm2: raise HTTPException(404, "One or both threat models not found")
+    ensure_can_access_threat_model(user, tm1); ensure_can_access_threat_model(user, tm2)
+    def _key(t): return (t.get("title","").lower().strip(), t.get("component_name","").lower().strip())
+    def _threats(tm): ar = tm.get("analysis_result") or {}; return ar.get("threats", []) if isinstance(ar, dict) else []
+    t1_map = {_key(t): t for t in _threats(tm1)}; t2_map = {_key(t): t for t in _threats(tm2)}
+    c1 = {c.get("name","") for c in (tm1.get("components") or [])}
+    c2 = {c.get("name","") for c in (tm2.get("components") or [])}
+    return {"model_1": {"id": id1, "name": tm1.get("name")}, "model_2": {"id": id2, "name": tm2.get("name")},
+            "new_threats": [t for k,t in t2_map.items() if k not in t1_map],
+            "resolved_threats": [t for k,t in t1_map.items() if k not in t2_map],
+            "changed_severity": [{"threat": t2_map[k], "old": t1_map[k].get("severity"), "new": t2_map[k].get("severity")} for k in t1_map if k in t2_map and t1_map[k].get("severity") != t2_map[k].get("severity")],
+            "new_components": list(c2-c1), "removed_components": list(c1-c2),
+            "summary": {"new": len([k for k in t2_map if k not in t1_map]), "resolved": len([k for k in t1_map if k not in t2_map])}}
+
+
+# ---------------------------------------------------------------------------
+# AI code fix (P2)
+# ---------------------------------------------------------------------------
+class FixRequest(BaseModel):
+    threat: dict; system_name: str = "System"; tech_stack: str = ""
+
+@app.post("/api/threat/fix")
+async def generate_fix(req: FixRequest, user: dict = Depends(get_current_user)):
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key: raise HTTPException(400, "Set ANTHROPIC_API_KEY to enable AI fix generation")
+    try:
+        import anthropic as _ant
+        t = req.threat
+        prompt = f"""You are a senior security engineer. Generate a concrete code fix for this threat.
+System: {req.system_name}\nTech stack: {req.tech_stack or "not specified"}
+Threat: {t.get("title","")} ({t.get("severity","")})
+CWE: {(t.get("cwe") or {}).get("id","")}
+Description: {t.get("description","")}
+Mitigations: {", ".join(t.get("mitigations") or [])}
+
+Return ONLY valid JSON with keys: language, explanation, before, after, diff_summary"""
+        resp = _ant.Anthropic(api_key=api_key).messages.create(
+            model="claude-sonnet-4-6", max_tokens=1200,
+            messages=[{"role":"user","content":prompt}])
+        text = re.sub(r"^```(?:json)?\s*|\s*```$", "", resp.content[0].text.strip(), flags=re.MULTILINE).strip()
+        return json.loads(text)
+    except Exception as e: raise HTTPException(500, f"Fix generation failed: {e}")
+
+
+# ---------------------------------------------------------------------------
+# CSV export
+# ---------------------------------------------------------------------------
+@app.post("/api/report/csv")
+async def report_csv(request: Request, user: dict = Depends(get_current_user)):
+    body = await request.json()
+    threats = body.get("threats", []); system_name = body.get("system", {}).get("name", "System")
+    import csv, io
+    buf = io.StringIO(); writer = csv.writer(buf)
+    writer.writerow(["ID","Title","Severity","Methodology","Component","Category","CVSS3.1","Cross-boundary","Description"])
+    for i, t in enumerate(threats):
+        writer.writerow([t.get("id",f"T{i+1:03d}"), t.get("title",""), t.get("severity",""),
+                         t.get("methodology","").upper(), t.get("component_name",""),
+                         t.get("category",""), t.get("cvss31",{}).get("score",""),
+                         "Yes" if t.get("cross_boundary") else "No", t.get("description","")])
+    return Response(content=buf.getvalue().encode(), media_type="text/csv",
+                    headers={"Content-Disposition": f'attachment; filename="risk_register_{system_name.replace(" ","_")}.csv"'})
+
+
+# ---------------------------------------------------------------------------
+# Templates endpoint
+# ---------------------------------------------------------------------------
+@app.get("/api/templates")
+async def get_templates(user: dict = Depends(get_current_user)):
+    import json as _j; tpl = BASE_DIR / "static" / "templates.json"
+    return _j.loads(tpl.read_text()) if tpl.exists() else []
+
