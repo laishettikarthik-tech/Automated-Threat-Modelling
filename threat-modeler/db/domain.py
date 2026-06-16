@@ -457,112 +457,40 @@ def management_overview() -> list[dict]:
             })
         return out
 
-
-# ---------------------------------------------------------------------------
-# Extended threat status helpers (owner, due_date, list all)
-# ---------------------------------------------------------------------------
-def upsert_threat_status(threat_model_id: int, threat_id: str, status: str,
-                          notes: str | None = None, updated_by: int = None,
-                          owner: str | None = None, due_date: str | None = None) -> dict:
-    """upsert_threat_status with optional owner + due_date columns.
-    Falls back to calling the existing upsert_threat_status if owner/due_date not
-    supported by the schema (safe degradation).
-    """
-    # Try to add columns if they don't exist yet (idempotent)
-    with db_conn(write=True) as c:
-        try:
-            c.execute("ALTER TABLE threat_status ADD COLUMN owner TEXT")
-        except Exception:
-            pass
-        try:
-            c.execute("ALTER TABLE threat_status ADD COLUMN due_date TEXT")
-        except Exception:
-            pass
-
-    result = set_threat_status(threat_model_id, threat_id, status, notes or "", updated_by or 0)
-
-    # Update owner / due_date separately
-    if owner is not None or due_date is not None:
-        updates = []
-        vals = []
-        if owner is not None:
-            updates.append("owner=?")
-            vals.append(owner)
-        if due_date is not None:
-            updates.append("due_date=?")
-            vals.append(due_date)
-        vals += [threat_model_id, threat_id]
-        with db_conn(write=True) as c:
-            c.execute(
-                f"UPDATE threat_status SET {', '.join(updates)} WHERE threat_model_id=? AND threat_id=?",
-                vals
-            )
-        result = get_threat_status(threat_model_id, threat_id)
-    return result
-
-
-def list_threat_statuses(threat_model_id: int) -> list[dict]:
-    """List all per-threat statuses for a threat model, including owner and due_date."""
-    with db_conn() as c:
-        rows = c.execute(
-            "SELECT * FROM threat_status WHERE threat_model_id=? ORDER BY updated_at DESC",
-            (threat_model_id,)
-        ).fetchall()
-    return [dict(r) for r in rows]
-
+import json as _json_domain
 
 # ---------------------------------------------------------------------------
 # E5: Custom threat rule CRUD
 # ---------------------------------------------------------------------------
-import json as _json
-
 def create_custom_rule(user_id: int, data: dict) -> dict:
     with db_conn(write=True) as c:
-        c.execute("""
-            INSERT INTO custom_threat_rules
-              (user_id, name, description, category, title, severity, applies_to, mitigations, tags)
-            VALUES (?,?,?,?,?,?,?,?,?)
-        """, (
-            user_id,
-            data.get("name", "Custom Rule"),
-            data.get("description", ""),
-            data.get("category", "Custom"),
-            data.get("title", ""),
-            data.get("severity", "Medium"),
-            _json.dumps(data.get("applies_to", [])),
-            _json.dumps(data.get("mitigations", [])),
-            _json.dumps(data.get("tags", [])),
-        ))
-        rule_id = c.lastrowid
-    return get_custom_rule(rule_id)
+        c.execute("INSERT INTO custom_threat_rules (user_id,name,title,severity,category,description,applies_to,mitigations,tags) VALUES (?,?,?,?,?,?,?,?,?)",
+            (user_id, data.get("name","Custom Rule"), data.get("title",""), data.get("severity","Medium"),
+             data.get("category","Custom"), data.get("description",""),
+             _json_domain.dumps(data.get("applies_to",[])), _json_domain.dumps(data.get("mitigations",[])), _json_domain.dumps(data.get("tags",[]))))
+        rid = c.lastrowid
+    return get_custom_rule(rid)
 
 def get_custom_rule(rule_id: int) -> dict | None:
     with db_conn() as c:
         row = c.execute("SELECT * FROM custom_threat_rules WHERE id=?", (rule_id,)).fetchone()
-    if not row: return None
-    return _parse_custom_rule(dict(row))
+    return _parse_custom_rule(dict(row)) if row else None
 
 def list_custom_rules(user_id: int, enabled_only: bool = False) -> list[dict]:
-    q = "SELECT * FROM custom_threat_rules WHERE user_id=?"
-    if enabled_only: q += " AND enabled=1"
-    q += " ORDER BY created_at DESC"
+    q = "SELECT * FROM custom_threat_rules WHERE user_id=?" + (" AND enabled=1" if enabled_only else "") + " ORDER BY created_at DESC"
     with db_conn() as c:
         rows = c.execute(q, (user_id,)).fetchall()
     return [_parse_custom_rule(dict(r)) for r in rows]
 
 def update_custom_rule(rule_id: int, user_id: int, data: dict) -> dict | None:
-    fields = []
-    vals   = []
+    fields, vals = [], []
     for k, v in data.items():
-        if k in ("name","description","category","title","severity","enabled"):
-            fields.append(f"{k}=?"); vals.append(v)
-        elif k in ("applies_to","mitigations","tags"):
-            fields.append(f"{k}=?"); vals.append(_json.dumps(v))
+        if k in ("name","title","severity","category","description","enabled"): fields.append(f"{k}=?"); vals.append(v)
+        elif k in ("applies_to","mitigations","tags"): fields.append(f"{k}=?"); vals.append(_json_domain.dumps(v))
     if not fields: return get_custom_rule(rule_id)
-    fields.append("updated_at=datetime('now')")
     vals += [rule_id, user_id]
     with db_conn(write=True) as c:
-        c.execute(f"UPDATE custom_threat_rules SET {', '.join(fields)} WHERE id=? AND user_id=?", vals)
+        c.execute(f"UPDATE custom_threat_rules SET {', '.join(fields)}, updated_at=datetime('now') WHERE id=? AND user_id=?", vals)
     return get_custom_rule(rule_id)
 
 def delete_custom_rule(rule_id: int, user_id: int) -> bool:
@@ -571,8 +499,28 @@ def delete_custom_rule(rule_id: int, user_id: int) -> bool:
     return True
 
 def _parse_custom_rule(row: dict) -> dict:
-    for k in ("applies_to", "mitigations", "tags"):
+    for k in ("applies_to","mitigations","tags"):
         if isinstance(row.get(k), str):
-            try: row[k] = _json.loads(row[k])
-            except Exception: row[k] = []
+            try: row[k] = _json_domain.loads(row[k])
+            except: row[k] = []
     return row
+
+# Extended threat status with owner + due_date
+def upsert_threat_status(threat_model_id: int, threat_id: str, status: str,
+                          notes: str = "", updated_by: int = 0,
+                          owner: str | None = None, due_date: str | None = None) -> dict:
+    with db_conn(write=True) as c:
+        try: c.execute("ALTER TABLE threat_status ADD COLUMN owner TEXT")
+        except: pass
+        try: c.execute("ALTER TABLE threat_status ADD COLUMN due_date TEXT")
+        except: pass
+    result = set_threat_status(threat_model_id, threat_id, status, notes, updated_by)
+    if owner is not None or due_date is not None:
+        updates, vals = [], []
+        if owner is not None: updates.append("owner=?"); vals.append(owner)
+        if due_date is not None: updates.append("due_date=?"); vals.append(due_date)
+        vals += [threat_model_id, threat_id]
+        with db_conn(write=True) as c:
+            c.execute(f"UPDATE threat_status SET {', '.join(updates)} WHERE threat_model_id=? AND threat_id=?", vals)
+        result = get_threat_status(threat_model_id, threat_id)
+    return result

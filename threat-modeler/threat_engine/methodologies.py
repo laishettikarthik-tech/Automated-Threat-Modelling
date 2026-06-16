@@ -1,3 +1,57 @@
+
+OWASP_TOP10 = {
+    "name": "OWASP Top 10",
+    "description": "The 10 most critical web application security risks (OWASP 2021)",
+    "categories": {
+        "A01 Broken Access Control": {
+            "description": "Access restrictions not enforced",
+            "applies_to": ["api","webapp","admin_panel","auth_service"],
+            "threats": [
+                {"title":"Insecure Direct Object Reference (IDOR)","description":"User accesses other users data by modifying IDs.","severity":"High","mitigations":["Object-level auth on every endpoint","Use indirect references","Log access-denied spikes"]},
+                {"title":"Missing function-level access control","description":"Admin endpoints accessible to low-privilege users.","severity":"Critical","mitigations":["Default-deny on new routes","Centralise authorisation in middleware","Automated privilege escalation tests"]},
+            ],
+        },
+        "A02 Cryptographic Failures": {
+            "description": "Failures exposing sensitive data",
+            "applies_to": ["database","datastore","api","webapp","cache"],
+            "threats": [
+                {"title":"Sensitive data stored in plaintext","description":"PII or passwords stored without encryption.","severity":"Critical","mitigations":["Encrypt at rest AES-256","Hash passwords with bcrypt/argon2","KMS for key management"]},
+                {"title":"Cleartext transmission of credentials","description":"Passwords transmitted over HTTP.","severity":"High","mitigations":["Enforce HTTPS/TLS 1.2+","HSTS with preloading","Certificate pinning in mobile"]},
+            ],
+        },
+        "A03 Injection": {
+            "description": "Hostile data sent to an interpreter",
+            "applies_to": ["api","webapp","database"],
+            "threats": [
+                {"title":"SQL injection via unsanitised input","description":"Attacker manipulates SQL queries.","severity":"Critical","mitigations":["Parameterised queries","ORM with query binding","WAF + input length limits"]},
+                {"title":"Command injection via shell execution","description":"User input passed to OS shell.","severity":"Critical","mitigations":["Avoid shell=True","Whitelist allowed arguments","Run with minimal OS privileges"]},
+            ],
+        },
+        "A05 Security Misconfiguration": {
+            "description": "Improperly configured security controls",
+            "applies_to": ["api","webapp","database","config","admin_panel"],
+            "threats": [
+                {"title":"Default credentials left on service","description":"Admin password left at factory default.","severity":"Critical","mitigations":["Rotate all defaults at provisioning","Fail startup if SECRET_KEY is default"]},
+                {"title":"Missing security headers","description":"CSP, X-Frame-Options, HSTS absent.","severity":"Medium","mitigations":["Implement Content-Security-Policy","Add all OWASP-recommended headers"]},
+            ],
+        },
+        "A07 Authentication Failures": {
+            "description": "Weaknesses in authentication and session management",
+            "applies_to": ["auth_service","api","webapp","mobile_app"],
+            "threats": [
+                {"title":"No rate limiting on login endpoint","description":"Brute-force and credential stuffing possible.","severity":"High","mitigations":["Rate-limit per IP on login","Exponential back-off","CAPTCHA on high-risk flows"]},
+                {"title":"Weak or absent MFA on privileged accounts","description":"Admin accounts authenticated by password only.","severity":"Critical","mitigations":["Enforce MFA for all admin roles","Prefer hardware tokens or passkeys"]},
+            ],
+        },
+        "A10 Server-Side Request Forgery": {
+            "description": "Server fetches remote resource without validation",
+            "applies_to": ["api","webapp","external_entity"],
+            "threats": [
+                {"title":"SSRF via user-supplied URL parameter","description":"Attacker makes server fetch internal metadata endpoints.","severity":"Critical","mitigations":["Validate and whitelist URL schemes and hosts","Block RFC-1918 and metadata IP ranges","Use egress proxy with allow-list"]},
+            ],
+        },
+    },
+}
 """Threat modeling methodology catalogs.
 
 Each methodology defines categories and the rule patterns that map
@@ -385,167 +439,6 @@ PASTA = {
                     "severity": "Low",
                     "mitigations": ["Track each risk to a decision (accept/mitigate/transfer/avoid)", "Re-review quarterly"],
                 },
-            ],
-        },
-    },
-}
-
-
-# ── OWASP Top 10 (2021) ────────────────────────────────────────────────────
-OWASP_TOP10 = {
-    "name": "OWASP Top 10",
-    "description": "The 10 most critical web application security risks (OWASP 2021 edition)",
-    "categories": {
-        "A01 Broken Access Control": {
-            "description": "Restrictions on authenticated users not properly enforced",
-            "applies_to": ["api", "webapp", "admin_panel", "auth_service"],
-            "threats": [
-                {"title": "Insecure Direct Object Reference (IDOR)",
-                 "description": "User can access other users' data by modifying IDs in requests.",
-                 "severity": "High",
-                 "mitigations": ["Enforce object-level auth on every endpoint", "Use indirect references (map IDs to UUIDs)", "Log and alert on access-denied spikes"]},
-                {"title": "Missing function-level access control",
-                 "description": "Administrative endpoints accessible to low-privilege users.",
-                 "severity": "Critical",
-                 "mitigations": ["Default-deny on all new routes", "Centralise authorisation in middleware", "Automated tests for privilege escalation paths"]},
-                {"title": "CORS misconfiguration allowing credential sharing",
-                 "description": "Wildcard or overly permissive CORS origin allows cross-origin credential theft.",
-                 "severity": "High",
-                 "mitigations": ["Whitelist specific origins", "Never combine Access-Control-Allow-Origin: * with credentials", "Review CORS policy in CI"]},
-            ],
-        },
-        "A02 Cryptographic Failures": {
-            "description": "Failures related to cryptography exposing sensitive data",
-            "applies_to": ["database", "datastore", "api", "webapp", "cache"],
-            "threats": [
-                {"title": "Sensitive data stored in plaintext",
-                 "description": "PII, passwords or payment data stored without encryption.",
-                 "severity": "Critical",
-                 "mitigations": ["Encrypt at rest using AES-256", "Use a KMS for key management", "Hash passwords with bcrypt/argon2 (never MD5/SHA1)"]},
-                {"title": "Cleartext transmission of credentials",
-                 "description": "Passwords or tokens transmitted over HTTP or unencrypted channels.",
-                 "severity": "High",
-                 "mitigations": ["Enforce HTTPS/TLS 1.2+ everywhere", "HSTS with preloading", "Certificate pinning in mobile clients"]},
-                {"title": "Use of deprecated cryptographic algorithms",
-                 "description": "MD5, SHA-1, DES, or RC4 used for hashing or encryption.",
-                 "severity": "Medium",
-                 "mitigations": ["Use SHA-256+ for hashing", "Use AES-GCM for encryption", "Run crypto audit with bandit / semgrep"]},
-            ],
-        },
-        "A03 Injection": {
-            "description": "Hostile data sent to an interpreter",
-            "applies_to": ["api", "webapp", "database", "queue"],
-            "threats": [
-                {"title": "SQL injection via unsanitised input",
-                 "description": "Attacker manipulates SQL queries to read, modify, or delete data.",
-                 "severity": "Critical",
-                 "mitigations": ["Use parameterised queries / prepared statements", "ORM with query binding", "WAF + input length limits"]},
-                {"title": "Command injection via shell execution",
-                 "description": "User-controlled data passed to OS shell commands.",
-                 "severity": "Critical",
-                 "mitigations": ["Avoid shell=True; use subprocess with argument lists", "Whitelist allowed command arguments", "Run processes with minimal OS privileges"]},
-                {"title": "NoSQL injection",
-                 "description": "Attacker manipulates MongoDB / DynamoDB query objects.",
-                 "severity": "High",
-                 "mitigations": ["Validate and sanitise all query parameters", "Use typed query builders", "Disable operator injection ($where, $regex)"]},
-            ],
-        },
-        "A04 Insecure Design": {
-            "description": "Missing or ineffective security controls in design",
-            "applies_to": ["api", "webapp", "auth_service", "admin_panel"],
-            "threats": [
-                {"title": "No rate limiting on sensitive actions",
-                 "description": "Brute-force, credential stuffing, or resource exhaustion possible.",
-                 "severity": "High",
-                 "mitigations": ["Rate-limit per IP and per user on login, registration, and password reset", "Exponential back-off after failures", "CAPTCHA on high-risk flows"]},
-                {"title": "Insecure password reset flow",
-                 "description": "Reset tokens guessable, long-lived, or reusable.",
-                 "severity": "High",
-                 "mitigations": ["Use cryptographically random tokens (≥128 bits)", "Expire tokens after 15 minutes", "Invalidate token on use"]},
-            ],
-        },
-        "A05 Security Misconfiguration": {
-            "description": "Improperly configured security controls",
-            "applies_to": ["api", "webapp", "database", "config", "admin_panel"],
-            "threats": [
-                {"title": "Default credentials left on service",
-                 "description": "Admin password or API key left at factory default.",
-                 "severity": "Critical",
-                 "mitigations": ["Rotate all defaults at provisioning", "Fail startup if SECRET_KEY is default", "Automated credential rotation"]},
-                {"title": "Unnecessary features and ports exposed",
-                 "description": "Debug endpoints, stack traces, or unused services reachable from outside.",
-                 "severity": "Medium",
-                 "mitigations": ["Disable debug mode in production", "Network-level port allow-list", "Remove unused dependencies and routes"]},
-                {"title": "Missing security headers",
-                 "description": "CSP, X-Frame-Options, HSTS absent, enabling clickjacking and injection.",
-                 "severity": "Medium",
-                 "mitigations": ["Implement Content-Security-Policy", "Add all OWASP-recommended headers", "Scan headers with securityheaders.com in CI"]},
-            ],
-        },
-        "A06 Vulnerable and Outdated Components": {
-            "description": "Using components with known vulnerabilities",
-            "applies_to": ["api", "webapp", "database", "cache"],
-            "threats": [
-                {"title": "Known CVE in a third-party dependency",
-                 "description": "npm/pip/maven package has an unpatched vulnerability.",
-                 "severity": "High",
-                 "mitigations": ["Run pip-audit / npm audit in CI", "Enable Dependabot / Renovate", "Pin versions and review changelogs before updates"]},
-                {"title": "End-of-life runtime or framework",
-                 "description": "Python 2, Node 14, or OpenSSL 1.0 in use — no security patches.",
-                 "severity": "High",
-                 "mitigations": ["Upgrade runtime to supported LTS version", "Track EOL dates in a dependency register", "Use container base images with automated rebuild on CVE"]},
-            ],
-        },
-        "A07 Identification and Authentication Failures": {
-            "description": "Weaknesses in authentication and session management",
-            "applies_to": ["auth_service", "api", "webapp", "mobile_app"],
-            "threats": [
-                {"title": "Weak or absent MFA on privileged accounts",
-                 "description": "Admin and high-privilege users authenticated by password only.",
-                 "severity": "Critical",
-                 "mitigations": ["Enforce MFA for all admin roles", "Prefer hardware tokens or passkeys", "Alert on MFA bypass attempts"]},
-                {"title": "Session fixation",
-                 "description": "Session ID not rotated after login, enabling fixation attacks.",
-                 "severity": "High",
-                 "mitigations": ["Regenerate session ID on authentication", "Set short session TTL for sensitive operations", "Bind session to user-agent and IP range"]},
-            ],
-        },
-        "A08 Software and Data Integrity Failures": {
-            "description": "Code and infrastructure without integrity verification",
-            "applies_to": ["api", "webapp", "queue", "external_entity"],
-            "threats": [
-                {"title": "Insecure deserialisation",
-                 "description": "Attacker sends crafted serialised objects to execute code or escalate privilege.",
-                 "severity": "Critical",
-                 "mitigations": ["Avoid deserialising untrusted data", "Use safe formats (JSON schema-validated)", "Integrity-check deserialised objects before use"]},
-                {"title": "CI/CD pipeline compromise",
-                 "description": "Attacker injects malicious code via a compromised build step.",
-                 "severity": "High",
-                 "mitigations": ["Pin CI action versions to full SHA", "Require signed commits on main", "Audit third-party GitHub Actions used"]},
-            ],
-        },
-        "A09 Security Logging and Monitoring Failures": {
-            "description": "Insufficient logging, monitoring, and alerting",
-            "applies_to": ["api", "auth_service", "database", "admin_panel"],
-            "threats": [
-                {"title": "Failed logins not logged or alerted",
-                 "description": "Brute-force attacks invisible to security team.",
-                 "severity": "High",
-                 "mitigations": ["Log all auth events with IP, user-agent, and outcome", "Alert on N failures in M minutes", "Ship logs to SIEM / immutable store"]},
-                {"title": "Audit trail absent for sensitive data access",
-                 "description": "No record of who accessed PII or admin functions.",
-                 "severity": "Medium",
-                 "mitigations": ["Append-only audit log for data access events", "Include actor, resource, action, timestamp", "Periodic audit log integrity check"]},
-            ],
-        },
-        "A10 Server-Side Request Forgery (SSRF)": {
-            "description": "Server fetches remote resource without validation",
-            "applies_to": ["api", "webapp", "external_entity"],
-            "threats": [
-                {"title": "SSRF via user-supplied URL parameter",
-                 "description": "Attacker makes the server fetch internal metadata endpoints or internal services.",
-                 "severity": "Critical",
-                 "mitigations": ["Validate and whitelist URL schemes and hosts", "Block RFC-1918 and metadata IP ranges (169.254.0.0/16)", "Use an egress proxy with explicit allow-list"]},
             ],
         },
     },

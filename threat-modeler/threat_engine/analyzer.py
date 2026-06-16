@@ -1,3 +1,20 @@
+
+import re as _re2
+_SEV_RANK = {"Critical":4,"High":3,"Medium":2,"Low":1,"Info":0}
+
+def _dedup_threats(threats):
+    seen = {}
+    for t in threats:
+        key = (_re2.sub(r"\W+"," ",(t.get("title") or "").lower()).strip(), t.get("component_id",""))
+        if key not in seen or _SEV_RANK.get(t.get("severity",""),0) > _SEV_RANK.get(seen[key].get("severity",""),0):
+            seen[key] = {**t, "methodologies": seen.get(key,{}).get("methodologies",[]) + [t.get("methodology","")]}
+        else:
+            seen[key]["methodologies"] = list(dict.fromkeys(seen[key]["methodologies"]+[t.get("methodology","")]))
+            seen[key]["mitigations"] = list(dict.fromkeys((seen[key].get("mitigations") or [])+(t.get("mitigations") or [])))
+    for t in seen.values():
+        t["methodology"] = " + ".join(m for m in t.get("methodologies",[]) if m)
+    return list(seen.values())
+
 """Threat analyzer.
 
 Takes a normalized system model:
@@ -428,46 +445,6 @@ Respond with ONLY valid JSON — no prose, no markdown fences. Schema:
 # ---------------------------------------------------------------------------
 # Public entrypoint
 # ---------------------------------------------------------------------------
-
-# ---------------------------------------------------------------------------
-# E1: Threat deduplication across methodologies
-# ---------------------------------------------------------------------------
-_SEV_RANK = {"Critical": 4, "High": 3, "Medium": 2, "Low": 1, "Info": 0}
-
-def _dedup_threats(threats: list[dict]) -> list[dict]:
-    """Merge near-duplicate threats produced by multiple methodologies.
-    Groups by (normalised_title, component_id); keeps highest severity,
-    merges mitigations and lists all contributing methodologies.
-    """
-    seen: dict[tuple, dict] = {}
-    for t in threats:
-        key = (
-            re.sub(r"\W+", " ", (t.get("title") or "").lower()).strip(),
-            t.get("component_id", ""),
-        )
-        if key not in seen:
-            seen[key] = {**t, "methodologies": [t.get("methodology", "")]}
-        else:
-            ex = seen[key]
-            # Promote severity if this instance is higher
-            if _SEV_RANK.get(t.get("severity",""), 0) > _SEV_RANK.get(ex.get("severity",""), 0):
-                seen[key] = {**t, "methodologies": ex["methodologies"] + [t.get("methodology","")]}
-            else:
-                ex["methodologies"] = list(dict.fromkeys(
-                    ex["methodologies"] + [t.get("methodology","")]
-                ))
-            # Merge mitigations (unique, order-preserving)
-            existing_mits = ex.get("mitigations") or []
-            new_mits      = t.get("mitigations") or []
-            merged = list(dict.fromkeys(existing_mits + new_mits))
-            seen[key]["mitigations"] = merged
-
-    result = list(seen.values())
-    # Set combined methodology label for display
-    for t in result:
-        t["methodology"] = " + ".join(m for m in t.get("methodologies", []) if m)
-    return result
-
 def analyze_system(
     system: dict[str, Any],
     methodology_keys: list[str],
@@ -493,9 +470,6 @@ def analyze_system(
         if use_llm:
             llm_threats = _llm_enhance(system, mkey, rule_threats)
             all_threats.extend(llm_threats)
-
-    # E1: deduplicate cross-methodology threats
-    all_threats = _dedup_threats(all_threats)
 
     # Enrich each threat with CVSS, CWE, and per-threat detail
     for t in all_threats:

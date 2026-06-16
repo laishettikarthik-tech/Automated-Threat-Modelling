@@ -1,0 +1,14 @@
+services:
+  threat-modeler:
+    build: .
+    container_name: threat-modeler
+    ports:
+      - "8000:8000"
+    environment:
+      # Optional: enable LLM enhancement by setting your key
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+    volumes:
+      # Persist the SQLite project DB across container restarts
+      - ./data:/app/data
+      - ./uploads:/app/uploads
+    restart: unless-stopped

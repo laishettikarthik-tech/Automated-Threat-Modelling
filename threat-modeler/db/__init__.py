@@ -1,3 +1,26 @@
+
+# E5: Custom threat rules table
+INIT_SQL_CUSTOM_RULES = """
+CREATE TABLE IF NOT EXISTS custom_threat_rules (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL,
+    name TEXT NOT NULL, title TEXT NOT NULL, severity TEXT NOT NULL DEFAULT 'Medium',
+    category TEXT NOT NULL DEFAULT 'Custom', description TEXT NOT NULL DEFAULT '',
+    applies_to TEXT NOT NULL DEFAULT '[]', mitigations TEXT NOT NULL DEFAULT '[]',
+    tags TEXT NOT NULL DEFAULT '[]', enabled INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_custom_rules_user ON custom_threat_rules(user_id);
+"""
+
+# U3: Share tokens table
+INIT_SQL_SHARE_TOKENS = """
+CREATE TABLE IF NOT EXISTS share_tokens (
+    token TEXT PRIMARY KEY, threat_model_id INTEGER NOT NULL,
+    created_by INTEGER NOT NULL, expires_at TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+"""
 """Database layer.
 
 Currently SQLite for POC. Designed to be swapped to PostgreSQL with minimal
@@ -206,6 +229,9 @@ CREATE INDEX IF NOT EXISTS idx_refresh_hash ON refresh_tokens(token_hash);
 
 
 def init_db():
+    _run_migration(INIT_SQL_CUSTOM_RULES)
+    _run_migration(INIT_SQL_SHARE_TOKENS)
+
     """Create tables if they don't exist. Idempotent — safe to call on every startup."""
     with db_conn(write=True) as c:
         c.executescript(SCHEMA)
@@ -274,110 +300,3 @@ def audit(
     except Exception as e:
         # If we can't audit, log to stderr but don't fail the request
         print(f"[audit] FAILED to log: {action} {decision} for {user_email}: {e}")
-
-
-# ===========================================================================
-# MULTI-TENANCY — teams, team_members, project sharing (Rec 8)
-# Migrations run once at startup via init_db()
-# ===========================================================================
-TEAMS_SCHEMA_SQL = """
-CREATE TABLE IF NOT EXISTS teams (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    name        TEXT NOT NULL,
-    slug        TEXT NOT NULL UNIQUE,
-    created_by  INTEGER NOT NULL,
-    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
-CREATE TABLE IF NOT EXISTS team_members (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    team_id    INTEGER NOT NULL,
-    user_id    INTEGER NOT NULL,
-    role       TEXT NOT NULL DEFAULT 'viewer'
-                   CHECK (role IN ('admin', 'editor', 'viewer')),
-    invited_by INTEGER,
-    joined_at  TEXT NOT NULL DEFAULT (datetime('now')),
-    UNIQUE(team_id, user_id)
-);
-
-CREATE TABLE IF NOT EXISTS team_projects (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    team_id    INTEGER NOT NULL,
-    project_id INTEGER NOT NULL,
-    shared_by  INTEGER NOT NULL,
-    shared_at  TEXT NOT NULL DEFAULT (datetime('now')),
-    UNIQUE(team_id, project_id)
-);
-
-CREATE TABLE IF NOT EXISTS team_invites (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    team_id    INTEGER NOT NULL,
-    email      TEXT NOT NULL,
-    role       TEXT NOT NULL DEFAULT 'viewer',
-    token      TEXT NOT NULL UNIQUE,
-    invited_by INTEGER NOT NULL,
-    expires_at TEXT NOT NULL,
-    accepted   INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
-CREATE INDEX IF NOT EXISTS idx_team_members_team ON team_members(team_id);
-CREATE INDEX IF NOT EXISTS idx_team_members_user ON team_members(user_id);
-CREATE INDEX IF NOT EXISTS idx_team_projects_team ON team_projects(team_id);
-"""
-
-# ===========================================================================
-# E5: Custom threat rules (user-defined per project)
-# ===========================================================================
-CUSTOM_RULES_SQL = """
-CREATE TABLE IF NOT EXISTS custom_threat_rules (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id     INTEGER NOT NULL,
-    name        TEXT    NOT NULL,
-    description TEXT    NOT NULL DEFAULT '',
-    category    TEXT    NOT NULL,
-    title       TEXT    NOT NULL,
-    severity    TEXT    NOT NULL DEFAULT 'Medium'
-                    CHECK (severity IN ('Critical','High','Medium','Low','Info')),
-    applies_to  TEXT    NOT NULL DEFAULT '[]',   -- JSON array of component types
-    mitigations TEXT    NOT NULL DEFAULT '[]',   -- JSON array of strings
-    tags        TEXT    NOT NULL DEFAULT '[]',
-    enabled     INTEGER NOT NULL DEFAULT 1,
-    created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
-    updated_at  TEXT    NOT NULL DEFAULT (datetime('now'))
-);
-CREATE INDEX IF NOT EXISTS idx_custom_rules_user ON custom_threat_rules(user_id);
-"""
-
-# ===========================================================================
-# D1: PostgreSQL support — set DATABASE_URL env var to switch from SQLite
-# Falls back to SQLite for local dev when DATABASE_URL is not set.
-# ===========================================================================
-import os as _os
-_DATABASE_URL = _os.getenv("DATABASE_URL", "")
-
-def db_conn_pg(write: bool = False):
-    """psycopg2 connection context manager (PostgreSQL)."""
-    import psycopg2
-    import psycopg2.extras
-    conn = psycopg2.connect(_DATABASE_URL)
-    conn.autocommit = False
-    try:
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            yield cur
-        if write:
-            conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
-
-# Patch db_conn to use Postgres when DATABASE_URL is set
-if _DATABASE_URL and _DATABASE_URL.startswith("postgresql"):
-    _orig_db_conn = db_conn
-    def db_conn(write: bool = False):  # noqa: F811
-        return db_conn_pg(write=write)
-    print("[db] Using PostgreSQL:", _DATABASE_URL.split("@")[-1])
-
