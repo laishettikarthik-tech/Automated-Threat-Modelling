@@ -361,14 +361,12 @@ def _specific_mitigations(threat: dict, component: dict, flow: dict | None) -> l
 # Optional LLM enrichment for the attack scenario
 # ---------------------------------------------------------------------------
 def _llm_enrich_scenario(threat: dict, component: dict, system_name: str) -> list[str] | None:
-    """If ANTHROPIC_API_KEY is set, ask Claude for a more specific 4-step attack
+    """If an LLM provider is configured, ask it for a more specific 4-step attack
     scenario tailored to this system. Returns None on failure."""
-    api_key = os.getenv("ANTHROPIC_API_KEY")
-    if not api_key:
+    from .llm import complete_text, llm_available, strip_fences
+    if not llm_available():
         return None
     try:
-        from anthropic import Anthropic
-        client = Anthropic(api_key=api_key)
         prompt = (
             f"You are a security engineer writing a threat model. Given this threat in the system "
             f"'{system_name}', write a concise 4-step attack scenario as a JSON array of 4 strings. "
@@ -380,18 +378,10 @@ def _llm_enrich_scenario(threat: dict, component: dict, system_name: str) -> lis
             f"Description: {threat.get('description','')}\n\n"
             f"Respond with ONLY a JSON array of 4 strings, no other text."
         )
-        resp = client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=600,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        text = resp.content[0].text.strip()
-        # Strip code fences if any
-        if text.startswith("```"):
-            text = text.split("```")[1]
-            if text.startswith("json"): text = text[4:]
-            text = text.strip()
-        scenario = json.loads(text)
+        text = complete_text(prompt, max_tokens=600)
+        if not text:
+            return None
+        scenario = json.loads(strip_fences(text))
         if isinstance(scenario, list) and len(scenario) >= 3:
             return [str(s) for s in scenario][:5]
     except Exception as e:

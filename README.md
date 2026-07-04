@@ -154,7 +154,8 @@ INITIAL_ADMIN_PASSWORD=change-me-now
 | POST | `/api/auth/login` | — | Get JWT token |
 | POST | `/api/analyze` | ✓ | Run threat model |
 | POST | `/api/extract-from-text` | ✓ | Text → components |
-| POST | `/api/extract-from-diagram` | ✓ | Claude Vision → components |
+| POST | `/api/extract-from-diagram` | ✓ | Upload a diagram → components (Claude Vision; editable stub without a key) |
+| POST | `/api/threat-models/from-diagram` | ✓ | Upload a diagram → creates + analyzes a threat model in one step |
 | GET  | `/api/templates` | ✓ | Built-in system templates |
 | POST | `/api/custom-rules` | ✓ | Create custom threat rule |
 | GET  | `/api/custom-rules` | ✓ | List custom rules |

@@ -20,7 +20,7 @@ import os
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request, Depends
+from fastapi import FastAPI, HTTPException, Request, Depends, UploadFile, File, Form
 from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -49,6 +49,7 @@ from auth import (
     ensure_can_access_threat_model, can_access_feature, get_role_permissions,
 )
 from threat_engine import analyze_system, METHODOLOGIES, render_dfd_svg, auto_layout_for_frontend
+from threat_engine.llm import llm_available as _llm_available, provider as _llm_provider
 from threat_engine.report import to_markdown, to_pdf
 from threat_engine.html_report import to_html
 
@@ -73,6 +74,8 @@ logger = _logging.getLogger("atm")
 
 _rate_store: dict = {}
 def _rate_limit(key: str, limit: int, window: int) -> bool:
+    if os.getenv("RATE_LIMIT_ENABLED", "1").lower() in ("0", "false", "no", "off"):
+        return True
     import time as _t2; now = _t2.time()
     _rate_store[key] = [t for t in _rate_store.get(key, []) if now - t < window]
     if len(_rate_store[key]) >= limit: return False
@@ -710,6 +713,99 @@ async def extract_from_text(payload: dict, user: dict = Depends(get_current_user
     return result
 
 
+# --- Diagram upload → system model --------------------------------------
+# Accepted image types and a sane upload ceiling for architecture diagrams.
+_DIAGRAM_TYPES = {"image/png": "image/png", "image/jpeg": "image/jpeg",
+                  "image/jpg": "image/jpeg", "image/webp": "image/webp"}
+_DIAGRAM_MAX_BYTES = 10 * 1024 * 1024  # 10 MB
+
+
+async def _read_diagram(file: UploadFile) -> tuple[bytes, str]:
+    """Validate an uploaded diagram and return (bytes, media_type)."""
+    media_type = _DIAGRAM_TYPES.get((file.content_type or "").lower())
+    if not media_type:
+        raise HTTPException(415, "Upload a PNG, JPEG, or WebP image of the architecture diagram.")
+    data = await file.read()
+    if not data:
+        raise HTTPException(400, "The uploaded file is empty.")
+    if len(data) > _DIAGRAM_MAX_BYTES:
+        raise HTTPException(413, "Diagram is too large (max 10 MB).")
+    return data, media_type
+
+
+@app.post("/api/extract-from-diagram")
+async def extract_from_diagram_endpoint(
+    file: UploadFile = File(...),
+    description: str = Form(""),
+    user: dict = Depends(get_current_user),
+):
+    """Extract a system model (components, flows, trust boundaries) from an
+    uploaded architecture diagram. Uses Claude vision when ANTHROPIC_API_KEY is
+    set, otherwise returns an editable starter model."""
+    from threat_engine.diagram_extractor import extract_from_diagram
+
+    data, media_type = await _read_diagram(file)
+    result = extract_from_diagram(data, media_type, description or "")
+    audit(user["id"], user["email"], "diagram.extract", "grant",
+          ip_address=user.get("_ip"),
+          detail=f"method={result.get('extraction_method')} "
+                 f"components={len(result.get('components', []))}")
+    return result
+
+
+@app.post("/api/threat-models/from-diagram")
+async def create_threat_model_from_diagram(
+    file: UploadFile = File(...),
+    feature_id: int = Form(...),
+    name: str = Form(""),
+    description: str = Form(""),
+    methodologies: str = Form("stride,owasp"),
+    analyze: bool = Form(True),
+    actor: dict = Depends(require_permission("threat_model.create")),
+):
+    """One-shot: upload an architecture diagram and get a persisted threat model
+    back. Extracts the system model from the image, creates the threat model
+    under the given feature, and (by default) runs the analysis immediately."""
+    from threat_engine.diagram_extractor import extract_from_diagram
+
+    feature = domain.get_feature(feature_id)
+    if not feature:
+        raise HTTPException(400, "Feature not found")
+    if not can_access_feature(actor, feature, "read"):
+        raise HTTPException(403, "No access to this feature")
+
+    data, media_type = await _read_diagram(file)
+    system = extract_from_diagram(data, media_type, description or "")
+
+    mkeys = [m.strip().lower() for m in methodologies.split(",") if m.strip()] or ["stride", "owasp"]
+    tm_name = name.strip() or (file.filename or "Diagram").rsplit(".", 1)[0]
+
+    try:
+        tm = domain.create_threat_model(
+            feature_id, owner_id=actor["id"], name=tm_name,
+            description=description or "Created from uploaded architecture diagram",
+            system=system, methodologies=mkeys,
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+    result = None
+    if analyze:
+        result = analyze_system(tm["system"], mkeys, use_llm=False)
+        domain.update_threat_model(tm["id"], methodologies=mkeys, analysis=result)
+
+    audit(actor["id"], actor["email"], "threat_model.create_from_diagram", "grant",
+          "threat_model", tm["id"], ip_address=actor.get("_ip"),
+          detail=f"extraction={system.get('extraction_method')} "
+                 f"threats={result['summary']['total'] if result else 0}")
+
+    return {
+        "threat_model": domain.get_threat_model(tm["id"]),
+        "extraction_method": system.get("extraction_method"),
+        "analysis": result,
+    }
+
+
 @app.post("/api/infer-trust-boundaries")
 async def infer_trust_boundaries_endpoint(
     payload: dict,
@@ -727,7 +823,7 @@ async def infer_trust_boundaries_endpoint(
     boundaries = infer_trust_boundaries(system, source_text=source_text, use_llm=use_llm)
     return {
         "trust_boundaries": boundaries,
-        "mode": "llm" if (use_llm and os.getenv("ANTHROPIC_API_KEY")) else "heuristic",
+        "mode": "llm" if (use_llm and _llm_available()) else "heuristic",
     }
 
 
@@ -751,7 +847,8 @@ async def health():
     return {
         "status": "ok",
         "version": app.version,
-        "llm_configured": bool(os.getenv("ANTHROPIC_API_KEY")),
+        "llm_configured": _llm_available(),
+        "llm_provider": _llm_provider(),
         "methodologies": list(METHODOLOGIES.keys()),
     }
 
@@ -810,7 +907,8 @@ async def canvas_page(request: Request):
         request, "index.html",
         {
             "methodologies": methodologies_ctx,
-            "llm_available": bool(os.getenv("ANTHROPIC_API_KEY")),
+            "llm_available": _llm_available(),
+            "llm_provider": _llm_provider(),
         }
     )
 
@@ -936,16 +1034,20 @@ class FixRequest(BaseModel):
 
 @app.post("/api/threat/fix")
 async def generate_fix(req: FixRequest, user: dict = Depends(get_current_user)):
-    api_key = os.getenv("ANTHROPIC_API_KEY")
-    if not api_key: raise HTTPException(400, "Set ANTHROPIC_API_KEY to enable AI fix generation")
+    from threat_engine.llm import complete_text, llm_available, strip_fences
+    if not llm_available():
+        raise HTTPException(400, "Configure an LLM provider (set ANTHROPIC_API_KEY or OPENAI_API_KEY) to enable AI fix generation")
     try:
-        import anthropic as _ant
         t = req.threat
         prompt = f"You are a senior security engineer. Generate a concrete code fix for this threat.\nSystem: {req.system_name}\nTech stack: {req.tech_stack or 'not specified'}\nThreat: {t.get('title','')} ({t.get('severity','')})\nCWE: {(t.get('cwe') or {}).get('id','')}\nDescription: {t.get('description','')}\nMitigations: {', '.join(t.get('mitigations') or [])}\n\nReturn ONLY valid JSON with keys: language, explanation, before, after, diff_summary"
-        resp = _ant.Anthropic(api_key=api_key).messages.create(model="claude-sonnet-4-6", max_tokens=1200, messages=[{"role":"user","content":prompt}])
-        text = re.sub(r"^```(?:json)?\s*|\s*```$", "", resp.content[0].text.strip(), flags=re.MULTILINE).strip()
-        return json.loads(text)
-    except Exception as e: raise HTTPException(500, f"Fix generation failed: {e}")
+        text = complete_text(prompt, max_tokens=1200)
+        if not text:
+            raise HTTPException(502, "LLM returned no response")
+        return json.loads(strip_fences(text))
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"Fix generation failed: {e}")
 
 
 # ===========================================================================
@@ -983,7 +1085,7 @@ if __name__ == "__main__":
     port = int(os.getenv("PORT", "8000"))
     host = os.getenv("HOST", "127.0.0.1")
     print(f"\n  Threat Modeler v2.0 running on {host}:{port}")
-    print(f"  LLM enhancement: {'ENABLED' if os.getenv('ANTHROPIC_API_KEY') else 'disabled'}")
+    print(f"  LLM: {_llm_provider()} ({'available' if _llm_available() else 'not configured — rules-only'})")
     print(f"  JWT_SECRET:      {'set' if os.getenv('JWT_SECRET') else 'NOT SET (sessions reset on restart)'}")
     print(f"  Initial admin:   {'configured' if os.getenv('INITIAL_ADMIN_EMAIL') else 'not configured'}\n")
     uvicorn.run("app:app", host=host, port=port, reload=False)

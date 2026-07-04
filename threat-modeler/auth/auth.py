@@ -70,6 +70,7 @@ def create_access_token(user_id: int, email: str, role: str) -> str:
         "role": role,
         "iat": int(now.timestamp()),
         "exp": int((now + _ACCESS_TOKEN_TTL).timestamp()),
+        "jti": secrets.token_hex(8),
         "type": "access",
     }
     return jwt.encode(payload, _JWT_SECRET, algorithm=_JWT_ALGORITHM)

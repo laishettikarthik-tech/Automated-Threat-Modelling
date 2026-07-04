@@ -8,9 +8,9 @@ import os, json
 from datetime import datetime
 
 
-def _claude_narrative(threats: list[dict], system_name: str, api_key: str) -> dict:
-    """Ask Claude to write the exec summary, top risks, and recommended actions."""
-    import anthropic
+def _claude_narrative(threats: list[dict], system_name: str) -> dict:
+    """Ask the configured LLM to write the exec summary, top risks, and actions."""
+    from .llm import complete_text, strip_fences
     sev_counts = {}
     for t in threats:
         s = t.get("severity", "Unknown")
@@ -36,13 +36,10 @@ Write a professional executive summary report with these exact sections:
 
 Return ONLY valid JSON with these 5 keys, no markdown, no preamble."""
 
-    client = anthropic.Anthropic(api_key=api_key)
-    resp = client.messages.create(model="claude-sonnet-4-6", max_tokens=1500,
-                                   messages=[{"role": "user", "content": prompt}])
-    import re
-    text = resp.content[0].text.strip()
-    text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text, flags=re.MULTILINE).strip()
-    return json.loads(text)
+    text = complete_text(prompt, max_tokens=1500)
+    if not text:
+        raise RuntimeError("no LLM response")
+    return json.loads(strip_fences(text))
 
 
 def generate_executive_report(analysis: dict, api_key: str | None = None) -> str:
@@ -55,12 +52,13 @@ def generate_executive_report(analysis: dict, api_key: str | None = None) -> str
     sev_colors  = {"Critical": "#e11d48", "High": "#f97316", "Medium": "#eab308", "Low": "#3b82f6", "Info": "#94a3b8"}
 
     # Try LLM narrative, fall back to template
+    from .llm import llm_available
     narrative = None
-    if api_key:
+    if llm_available():
         try:
-            narrative = _claude_narrative(threats, system_name, api_key)
+            narrative = _claude_narrative(threats, system_name)
         except Exception as e:
-            print(f"[exec_report] Claude narrative failed: {e}")
+            print(f"[exec_report] LLM narrative failed: {e}")
 
     if not narrative:
         crit = summary.get("by_severity", {}).get("Critical", 0)

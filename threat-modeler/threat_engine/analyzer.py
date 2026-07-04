@@ -363,18 +363,12 @@ def _rule_based_threats(system: dict, methodology_key: str) -> list[dict]:
 # Optional LLM enhancement via Claude API
 # ---------------------------------------------------------------------------
 def _llm_enhance(system: dict, methodology_key: str, base_threats: list[dict]) -> list[dict]:
-    """If ANTHROPIC_API_KEY is set, ask Claude to suggest additional context-specific
-    threats. Falls back silently if unavailable."""
-    api_key = os.getenv("ANTHROPIC_API_KEY")
-    if not api_key:
+    """If an LLM provider is configured, ask it to suggest additional
+    context-specific threats. Falls back silently if unavailable."""
+    from .llm import complete_text, llm_available, strip_fences
+    if not llm_available():
         return []
 
-    try:
-        import anthropic  # type: ignore
-    except Exception:
-        return []
-
-    client = anthropic.Anthropic(api_key=api_key)
     methodology = METHODOLOGIES[methodology_key]
 
     prompt = f"""You are a senior application security architect performing a threat model.
@@ -406,15 +400,10 @@ Respond with ONLY valid JSON — no prose, no markdown fences. Schema:
 }}"""
 
     try:
-        resp = client.messages.create(
-            model=os.getenv("ANTHROPIC_MODEL", "claude-opus-4-8"),
-            max_tokens=2000,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        text = resp.content[0].text.strip()
-        # Strip code fences if present
-        text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text, flags=re.MULTILINE).strip()
-        parsed = json.loads(text)
+        text = complete_text(prompt, max_tokens=2000)
+        if not text:
+            return []
+        parsed = json.loads(strip_fences(text))
     except Exception as e:
         print(f"[llm_enhance] failed: {e}")
         return []

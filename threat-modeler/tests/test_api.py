@@ -28,8 +28,9 @@ _tmp_db = tempfile.NamedTemporaryFile(delete=False, suffix=".db")
 _tmp_db.close()
 os.environ["THREAT_MODELER_DB"] = _tmp_db.name
 os.environ["JWT_SECRET"] = "test-secret-do-not-use-in-prod-dGVzdA=="
-os.environ["INITIAL_ADMIN_EMAIL"] = "admin@test.local"
+os.environ["INITIAL_ADMIN_EMAIL"] = "admin@example.com"
 os.environ["INITIAL_ADMIN_PASSWORD"] = "AdminPass123!"
+os.environ["RATE_LIMIT_ENABLED"] = "0"
 
 # Make sure we re-import db with the new path
 for mod in list(sys.modules):
@@ -79,7 +80,7 @@ def login(email, password):
 
 
 def admin_token():
-    return login("admin@test.local", "AdminPass123!")["access_token"]
+    return login("admin@example.com", "AdminPass123!")["access_token"]
 
 
 def register_user(email, password, full_name):
@@ -167,8 +168,8 @@ t("GET /api/methodologies is public", test_methodologies_public)
 print("\n=== Auth flows ===")
 # ===========================================================================
 def test_register_creates_user_role():
-    body = register_user("alice@test.local", "AlicePass123!", "Alice")
-    assert body["user"]["email"] == "alice@test.local"
+    body = register_user("alice@example.com", "AlicePass123!", "Alice")
+    assert body["user"]["email"] == "alice@example.com"
     assert body["user"]["role"] == "user"
     assert body["access_token"]
     assert body["refresh_token"]
@@ -177,9 +178,9 @@ t("Self-register creates user-role account + auto-login", test_register_creates_
 
 
 def test_register_rejects_duplicate_email():
-    register_user("bob@test.local", "BobPass123!", "Bob")
+    register_user("bob@example.com", "BobPass123!", "Bob")
     r = client.post("/api/auth/register",
-                    json={"email": "bob@test.local", "password": "BobPass123!", "full_name": "Bob"})
+                    json={"email": "bob@example.com", "password": "BobPass123!", "full_name": "Bob"})
     assert r.status_code == 400
 
 t("Duplicate email registration rejected", test_register_rejects_duplicate_email)
@@ -187,16 +188,16 @@ t("Duplicate email registration rejected", test_register_rejects_duplicate_email
 
 def test_register_rejects_short_password():
     r = client.post("/api/auth/register",
-                    json={"email": "short@test.local", "password": "x", "full_name": "X"})
+                    json={"email": "short@example.com", "password": "x", "full_name": "X"})
     assert r.status_code == 422
 
 t("Short password rejected at validation layer", test_register_rejects_short_password)
 
 
 def test_login_wrong_password():
-    register_user("charlie@test.local", "CharliePass123!", "Charlie")
+    register_user("charlie@example.com", "CharliePass123!", "Charlie")
     r = client.post("/api/auth/login",
-                    json={"email": "charlie@test.local", "password": "wrong"})
+                    json={"email": "charlie@example.com", "password": "wrong"})
     assert r.status_code == 401
 
 t("Login with wrong password returns 401", test_login_wrong_password)
@@ -205,7 +206,7 @@ t("Login with wrong password returns 401", test_login_wrong_password)
 def test_login_unknown_email_returns_401_not_404():
     """Don't leak which step failed (email vs password)"""
     r = client.post("/api/auth/login",
-                    json={"email": "nobody@test.local", "password": "whatever123"})
+                    json={"email": "nobody@example.com", "password": "whatever123"})
     assert r.status_code == 401
 
 t("Login with unknown email returns 401 (not 404 — no enumeration)",
@@ -220,10 +221,10 @@ t("GET /api/auth/me without token is 401", test_me_requires_auth)
 
 
 def test_me_with_token():
-    body = register_user("dave@test.local", "DavePass123!", "Dave")
+    body = register_user("dave@example.com", "DavePass123!", "Dave")
     r = client.get("/api/auth/me", headers=H(body["access_token"]))
     assert r.status_code == 200
-    assert r.json()["user"]["email"] == "dave@test.local"
+    assert r.json()["user"]["email"] == "dave@example.com"
     assert "threat_model.create" in r.json()["permissions"]
 
 t("GET /api/auth/me with token returns user + permissions", test_me_with_token)
@@ -237,7 +238,7 @@ t("Invalid token returns 401", test_invalid_token)
 
 
 def test_refresh_token_flow():
-    body = register_user("eve@test.local", "EvePass123!", "Eve")
+    body = register_user("eve@example.com", "EvePass123!", "Eve")
     # Use refresh token to get a new pair
     r = client.post("/api/auth/refresh",
                     json={"refresh_token": body["refresh_token"]})
@@ -253,7 +254,7 @@ t("Refresh token rotation works (old token revoked after use)", test_refresh_tok
 
 
 def test_logout_revokes_refresh():
-    body = register_user("frank@test.local", "FrankPass123!", "Frank")
+    body = register_user("frank@example.com", "FrankPass123!", "Frank")
     r = client.post("/api/auth/logout", headers=H(body["access_token"]))
     assert r.status_code == 200
     # Now refresh should fail
@@ -265,14 +266,14 @@ t("Logout revokes all refresh tokens", test_logout_revokes_refresh)
 
 
 def test_account_lockout():
-    register_user("grace@test.local", "GracePass123!", "Grace")
+    register_user("grace@example.com", "GracePass123!", "Grace")
     # 5 wrong attempts
     for _ in range(5):
         client.post("/api/auth/login",
-                    json={"email": "grace@test.local", "password": "wrong"})
+                    json={"email": "grace@example.com", "password": "wrong"})
     # 6th — even with correct password — should be locked
     r = client.post("/api/auth/login",
-                    json={"email": "grace@test.local", "password": "GracePass123!"})
+                    json={"email": "grace@example.com", "password": "GracePass123!"})
     assert r.status_code == 401
     assert "locked" in r.json()["detail"].lower()
 
@@ -283,7 +284,7 @@ t("Account locked after 5 failed login attempts", test_account_lockout)
 print("\n=== Permission gating (role × endpoint) ===")
 # ===========================================================================
 def test_user_cannot_create_release():
-    body = register_user("hank@test.local", "HankPass123!", "Hank")
+    body = register_user("hank@example.com", "HankPass123!", "Hank")
     r = client.post("/api/releases", headers=H(body["access_token"]),
                     json={"name": "X", "description": ""})
     assert r.status_code == 403
@@ -292,7 +293,7 @@ t("User role: cannot POST /api/releases (403)", test_user_cannot_create_release)
 
 
 def test_user_cannot_create_feature():
-    body = register_user("ian@test.local", "IanPass123!", "Ian")
+    body = register_user("ian@example.com", "IanPass123!", "Ian")
     r = client.post("/api/features", headers=H(body["access_token"]),
                     json={"release_id": 1, "name": "X", "description": ""})
     assert r.status_code == 403
@@ -301,7 +302,7 @@ t("User role: cannot POST /api/features (403)", test_user_cannot_create_feature)
 
 
 def test_user_cannot_list_users():
-    body = register_user("jane@test.local", "JanePass123!", "Jane")
+    body = register_user("jane@example.com", "JanePass123!", "Jane")
     r = client.get("/api/users", headers=H(body["access_token"]))
     assert r.status_code == 403
 
@@ -309,7 +310,7 @@ t("User role: cannot GET /api/users (403)", test_user_cannot_list_users)
 
 
 def test_user_cannot_read_audit_log():
-    body = register_user("ken@test.local", "KenPass123!", "Ken")
+    body = register_user("ken@example.com", "KenPass123!", "Ken")
     r = client.get("/api/audit-log", headers=H(body["access_token"]))
     assert r.status_code == 403
 
@@ -317,7 +318,7 @@ t("User role: cannot GET /api/audit-log (403)", test_user_cannot_read_audit_log)
 
 
 def test_user_cannot_view_management_overview():
-    body = register_user("lisa@test.local", "LisaPass123!", "Lisa")
+    body = register_user("lisa@example.com", "LisaPass123!", "Lisa")
     r = client.get("/api/management/overview", headers=H(body["access_token"]))
     assert r.status_code == 403
 
@@ -327,8 +328,8 @@ t("User role: cannot GET /api/management/overview (403)",
 
 def test_management_can_view_overview():
     a = admin_token()
-    admin_create_user(a, "mgmt1@test.local", "MgmtPass123!", "Mgmt1", "management")
-    m_token = login("mgmt1@test.local", "MgmtPass123!")["access_token"]
+    admin_create_user(a, "mgmt1@example.com", "MgmtPass123!", "Mgmt1", "management")
+    m_token = login("mgmt1@example.com", "MgmtPass123!")["access_token"]
     r = client.get("/api/management/overview", headers=H(m_token))
     assert r.status_code == 200
 
@@ -337,8 +338,8 @@ t("Management role: can GET /api/management/overview", test_management_can_view_
 
 def test_management_cannot_create_release():
     a = admin_token()
-    admin_create_user(a, "mgmt2@test.local", "MgmtPass123!", "Mgmt2", "management")
-    m_token = login("mgmt2@test.local", "MgmtPass123!")["access_token"]
+    admin_create_user(a, "mgmt2@example.com", "MgmtPass123!", "Mgmt2", "management")
+    m_token = login("mgmt2@example.com", "MgmtPass123!")["access_token"]
     r = client.post("/api/releases", headers=H(m_token),
                     json={"name": "X", "description": ""})
     assert r.status_code == 403
@@ -369,12 +370,12 @@ def test_user_sees_only_own_threat_models():
     rel = make_release(a, "Visibility Release")
     feat = make_feature(a, rel["id"], "Visibility Feature")
     # Grant 2 users access to this feature so they can both create TMs in it
-    u1 = admin_create_user(a, "vis1@test.local", "Vis1Pass123!", "Vis1", "user",
+    u1 = admin_create_user(a, "vis1@example.com", "Vis1Pass123!", "Vis1", "user",
                            feature_ids=[feat["id"]])
-    u2 = admin_create_user(a, "vis2@test.local", "Vis2Pass123!", "Vis2", "user",
+    u2 = admin_create_user(a, "vis2@example.com", "Vis2Pass123!", "Vis2", "user",
                            feature_ids=[feat["id"]])
-    t1 = login("vis1@test.local", "Vis1Pass123!")["access_token"]
-    t2 = login("vis2@test.local", "Vis2Pass123!")["access_token"]
+    t1 = login("vis1@example.com", "Vis1Pass123!")["access_token"]
+    t2 = login("vis2@example.com", "Vis2Pass123!")["access_token"]
     tm1 = make_threat_model(t1, feat["id"], "User1 TM")
     tm2 = make_threat_model(t2, feat["id"], "User2 TM")
     # User 1 lists — should only see their own
@@ -392,12 +393,12 @@ def test_user_404_on_other_users_threat_model():
     a = admin_token()
     rel = make_release(a, "Privacy Release")
     feat = make_feature(a, rel["id"])
-    u1 = admin_create_user(a, "priv1@test.local", "Priv1Pass123!", "Priv1", "user",
+    u1 = admin_create_user(a, "priv1@example.com", "Priv1Pass123!", "Priv1", "user",
                            feature_ids=[feat["id"]])
-    u2 = admin_create_user(a, "priv2@test.local", "Priv2Pass123!", "Priv2", "user")
+    u2 = admin_create_user(a, "priv2@example.com", "Priv2Pass123!", "Priv2", "user")
     # u2 has NO feature access
-    t1 = login("priv1@test.local", "Priv1Pass123!")["access_token"]
-    t2 = login("priv2@test.local", "Priv2Pass123!")["access_token"]
+    t1 = login("priv1@example.com", "Priv1Pass123!")["access_token"]
+    t2 = login("priv2@example.com", "Priv2Pass123!")["access_token"]
     tm = make_threat_model(t1, feat["id"], "Priv1 TM")
     r = client.get(f"/api/threat-models/{tm['id']}", headers=H(t2))
     assert r.status_code == 404, f"expected 404, got {r.status_code}"
@@ -411,12 +412,12 @@ def test_user_cannot_update_other_users_tm():
     a = admin_token()
     rel = make_release(a, "Update Release")
     feat = make_feature(a, rel["id"])
-    u1 = admin_create_user(a, "upd1@test.local", "Upd1Pass123!", "Upd1", "user",
+    u1 = admin_create_user(a, "upd1@example.com", "Upd1Pass123!", "Upd1", "user",
                            feature_ids=[feat["id"]])
-    u2 = admin_create_user(a, "upd2@test.local", "Upd2Pass123!", "Upd2", "user",
+    u2 = admin_create_user(a, "upd2@example.com", "Upd2Pass123!", "Upd2", "user",
                            feature_ids=[feat["id"]])
-    t1 = login("upd1@test.local", "Upd1Pass123!")["access_token"]
-    t2 = login("upd2@test.local", "Upd2Pass123!")["access_token"]
+    t1 = login("upd1@example.com", "Upd1Pass123!")["access_token"]
+    t2 = login("upd2@example.com", "Upd2Pass123!")["access_token"]
     tm = make_threat_model(t1, feat["id"], "Upd1 TM")
     # u2 has feature access (can create their own TMs there), but cannot
     # see/edit/delete u1's TM — strict ownership.
@@ -438,14 +439,14 @@ def test_management_sees_all_threat_models():
     a = admin_token()
     rel = make_release(a, "Mgmt-Vis Release")
     feat = make_feature(a, rel["id"])
-    u1 = admin_create_user(a, "mvis1@test.local", "Mvis1Pass!", "Mvis1", "user",
+    u1 = admin_create_user(a, "mvis1@example.com", "Mvis1Pass!", "Mvis1", "user",
                            feature_ids=[feat["id"]])
-    u2 = admin_create_user(a, "mvis2@test.local", "Mvis2Pass!", "Mvis2", "user",
+    u2 = admin_create_user(a, "mvis2@example.com", "Mvis2Pass!", "Mvis2", "user",
                            feature_ids=[feat["id"]])
-    mgmt = admin_create_user(a, "mvismg@test.local", "MvismgPass!", "Mgmt", "management")
-    t1 = login("mvis1@test.local", "Mvis1Pass!")["access_token"]
-    t2 = login("mvis2@test.local", "Mvis2Pass!")["access_token"]
-    mt = login("mvismg@test.local", "MvismgPass!")["access_token"]
+    mgmt = admin_create_user(a, "mvismg@example.com", "MvismgPass!", "Mgmt", "management")
+    t1 = login("mvis1@example.com", "Mvis1Pass!")["access_token"]
+    t2 = login("mvis2@example.com", "Mvis2Pass!")["access_token"]
+    mt = login("mvismg@example.com", "MvismgPass!")["access_token"]
     tm1 = make_threat_model(t1, feat["id"], "M1 TM")
     tm2 = make_threat_model(t2, feat["id"], "M2 TM")
     r = client.get("/api/threat-models", headers=H(mt))
@@ -461,11 +462,11 @@ def test_admin_grants_do_not_extend_tm_visibility():
     a = admin_token()
     rel = make_release(a, "Grant Release")
     feat = make_feature(a, rel["id"])
-    owner = admin_create_user(a, "gowner@test.local", "GownerPass!", "Owner", "user",
+    owner = admin_create_user(a, "gowner@example.com", "GownerPass!", "Owner", "user",
                               feature_ids=[feat["id"]])
-    grantee = admin_create_user(a, "ggrant@test.local", "GgrantPass!", "Grantee", "user")
-    o_token = login("gowner@test.local", "GownerPass!")["access_token"]
-    g_token = login("ggrant@test.local", "GgrantPass!")["access_token"]
+    grantee = admin_create_user(a, "ggrant@example.com", "GgrantPass!", "Grantee", "user")
+    o_token = login("gowner@example.com", "GownerPass!")["access_token"]
+    g_token = login("ggrant@example.com", "GgrantPass!")["access_token"]
     tm = make_threat_model(o_token, feat["id"], "Owner TM")
 
     # Grantee currently can't see it (no grant, no ownership)
@@ -502,9 +503,9 @@ def test_threat_status_update_flow():
     a = admin_token()
     rel = make_release(a, "Status Release")
     feat = make_feature(a, rel["id"])
-    u = admin_create_user(a, "status1@test.local", "StatusPass!", "S", "user",
+    u = admin_create_user(a, "status1@example.com", "StatusPass!", "S", "user",
                           feature_ids=[feat["id"]])
-    ut = login("status1@test.local", "StatusPass!")["access_token"]
+    ut = login("status1@example.com", "StatusPass!")["access_token"]
     tm = make_threat_model(ut, feat["id"])
 
     # Run analysis to generate threat IDs
@@ -537,11 +538,11 @@ def test_management_cannot_update_threat_status():
     a = admin_token()
     rel = make_release(a, "MgmtStatus Release")
     feat = make_feature(a, rel["id"])
-    u = admin_create_user(a, "mst1@test.local", "Mst1Pass!", "U", "user",
+    u = admin_create_user(a, "mst1@example.com", "Mst1Pass!", "U", "user",
                           feature_ids=[feat["id"]])
-    m = admin_create_user(a, "mstmg@test.local", "MstmgPass!", "M", "management")
-    ut = login("mst1@test.local", "Mst1Pass!")["access_token"]
-    mt = login("mstmg@test.local", "MstmgPass!")["access_token"]
+    m = admin_create_user(a, "mstmg@example.com", "MstmgPass!", "M", "management")
+    ut = login("mst1@example.com", "Mst1Pass!")["access_token"]
+    mt = login("mstmg@example.com", "MstmgPass!")["access_token"]
     tm = make_threat_model(ut, feat["id"])
     r = client.post(f"/api/threat-models/{tm['id']}/analyze",
                     headers=H(ut), json={"methodologies": ["stride"]})
@@ -591,9 +592,9 @@ print("\n=== Audit log ===")
 def test_audit_log_captures_actions():
     a = admin_token()
     # Trigger some actions
-    register_user("audit1@test.local", "AuditPass!", "A1")
+    register_user("audit1@example.com", "AuditPass!", "A1")
     client.post("/api/auth/login",
-                json={"email": "audit1@test.local", "password": "wrong"})
+                json={"email": "audit1@example.com", "password": "wrong"})
     r = client.get("/api/audit-log?limit=50", headers=H(a))
     assert r.status_code == 200
     logs = r.json()

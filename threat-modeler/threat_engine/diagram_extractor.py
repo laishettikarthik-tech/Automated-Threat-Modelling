@@ -14,19 +14,12 @@ import uuid
 def extract_from_diagram(image_bytes: bytes, media_type: str, description: str = "") -> dict:
     """Analyze an architecture diagram image and return a system model.
     
-    Falls back to a stub if ANTHROPIC_API_KEY is not configured.
+    Falls back to a stub if no LLM provider is configured.
     """
-    api_key = os.getenv("ANTHROPIC_API_KEY")
-    if not api_key:
+    from .llm import complete_vision, llm_available, strip_fences
+    if not llm_available():
         return _stub_result(description)
 
-    try:
-        import anthropic
-        client = anthropic.Anthropic(api_key=api_key)
-    except Exception:
-        return _stub_result(description)
-
-    b64 = base64.standard_b64encode(image_bytes).decode()
     extra = f"\nAdditional context from user: {description}" if description.strip() else ""
 
     prompt = f"""You are an expert security architect analyzing an architecture diagram.
@@ -75,22 +68,10 @@ Rules:
 - Ensure ids are unique (use descriptive slugs like c_webapp, c_postgres, f_user_api, b_internet)"""
 
     try:
-        resp = client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=3000,
-            messages=[{
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image",
-                        "source": {"type": "base64", "media_type": media_type, "data": b64},
-                    },
-                    {"type": "text", "text": prompt},
-                ],
-            }],
-        )
-        text = resp.content[0].text.strip()
-        text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text, flags=re.MULTILINE).strip()
+        text = complete_vision(prompt, image_bytes, media_type, max_tokens=3000)
+        if not text:
+            return _stub_result(description)
+        text = strip_fences(text)
         result = json.loads(text)
         
         # Validate and clean up

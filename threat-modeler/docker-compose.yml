@@ -19,6 +19,13 @@ services:
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
       # Override the Claude model used for enhancement
       ANTHROPIC_MODEL: "${ANTHROPIC_MODEL:-claude-opus-4-8}"
+      # --- Alternate LLM provider (optional) ---
+      # "anthropic" (default) or "openai". Auto-detected from the key if unset.
+      LLM_PROVIDER: "${LLM_PROVIDER:-}"
+      # OpenAI / OpenAI-compatible (Azure, Ollama, LiteLLM, OpenRouter, ...)
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      OPENAI_MODEL: "${OPENAI_MODEL:-}"
+      OPENAI_BASE_URL: "${OPENAI_BASE_URL:-}"
     volumes:
       # Persist the SQLite project DB across container restarts
       - ./data:/app/data

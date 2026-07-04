@@ -185,7 +185,7 @@ def _draw_flow(flow: dict, comp_by_id: dict, positions: dict,
 
     encrypted = flow.get("encrypted", True)
     color = "#ef4444" if (not encrypted or crosses_boundary) else "#64748b"
-    dash = "5,4" if not encrypted else "0"
+    dash = "5,4" if not encrypted else "none"
     width = 2.2 if crosses_boundary else 1.6
 
     label = flow.get("label", "")

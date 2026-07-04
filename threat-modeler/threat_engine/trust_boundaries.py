@@ -172,15 +172,10 @@ _BOUNDARY_DESCRIPTIONS = {
 # LLM mode
 # ---------------------------------------------------------------------------
 def infer_trust_boundaries_llm(system: dict, source_text: str = "") -> list[dict] | None:
-    """Use Claude to reason about trust zones. Returns None on failure
-    (caller should fall back to heuristic)."""
-    api_key = os.getenv("ANTHROPIC_API_KEY")
-    if not api_key:
-        return None
-
-    try:
-        import anthropic  # type: ignore
-    except Exception:
+    """Use the configured LLM to reason about trust zones. Returns None on
+    failure (caller should fall back to heuristic)."""
+    from .llm import complete_text, llm_available, strip_fences
+    if not llm_available():
         return None
 
     components = system.get("components", []) or []
@@ -222,21 +217,10 @@ def infer_trust_boundaries_llm(system: dict, source_text: str = "") -> list[dict
     )
 
     try:
-        client = anthropic.Anthropic(api_key=api_key)
-        msg = client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=2000,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        raw = ""
-        for block in msg.content:
-            if getattr(block, "type", "") == "text":
-                raw += block.text
-        # Strip code fences if present
-        raw = raw.strip()
-        if raw.startswith("```"):
-            raw = re.sub(r"^```(?:json)?\s*", "", raw)
-            raw = re.sub(r"\s*```$", "", raw)
+        raw = complete_text(prompt, max_tokens=2000)
+        if not raw:
+            return None
+        raw = strip_fences(raw)
 
         parsed = json.loads(raw)
         boundaries_raw = parsed.get("boundaries", [])

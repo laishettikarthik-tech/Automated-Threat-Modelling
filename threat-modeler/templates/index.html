@@ -130,7 +130,7 @@
     </div>
     <div class="flex items-center gap-3">
       <span id="llm-badge" class="text-xs px-2 py-1 rounded {% if llm_available %}bg-emerald-600{% else %}bg-slate-700{% endif %}">
-        {% if llm_available %}🤖 Claude AI ON{% else %}📐 Rules only{% endif %}
+        {% if llm_available %}🤖 {{ {'anthropic':'Claude','openai':'OpenAI'}.get(llm_provider, llm_provider) }} ON{% else %}📐 Rules only{% endif %}
       </span>
       <button id="projects-btn" class="text-sm px-3 py-1.5 rounded bg-slate-800 hover:bg-slate-700">📁 Projects</button>
     </div>
@@ -161,10 +161,10 @@
     <div class="mt-4 flex items-center gap-3">
       <label class="flex items-center gap-2 text-sm {% if not llm_available %}opacity-50{% endif %}">
         <input type="checkbox" id="use-llm" {% if not llm_available %}disabled{% endif %}>
-        <span>Enhance with Claude (LLM-suggested context-specific threats)</span>
+        <span>Enhance with {% if llm_available %}{{ {'anthropic':'Claude','openai':'OpenAI'}.get(llm_provider, llm_provider) }}{% else %}an LLM{% endif %} (context-specific threats)</span>
       </label>
       {% if not llm_available %}
-      <span class="text-xs text-slate-400">— set <code>ANTHROPIC_API_KEY</code> to enable</span>
+      <span class="text-xs text-slate-400">— set <code>ANTHROPIC_API_KEY</code> or <code>OPENAI_API_KEY</code> to enable</span>
       {% endif %}
     </div>
   </section>
@@ -218,11 +218,11 @@
               <p class="text-xs text-slate-400 mt-1">PNG · JPG · WebP · max 20 MB</p>
               {% if llm_available %}
               <div class="mt-3 inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-700 text-xs font-medium px-3 py-1.5 rounded-full border border-emerald-200">
-                🤖 Claude Vision will analyze your diagram
+                🤖 {{ {'anthropic':'Claude Vision','openai':'OpenAI Vision'}.get(llm_provider, llm_provider) }} will analyze your diagram
               </div>
               {% else %}
               <div class="mt-3 inline-flex items-center gap-1.5 bg-amber-50 text-amber-700 text-xs font-medium px-3 py-1.5 rounded-full border border-amber-200">
-                ⚠️ Set ANTHROPIC_API_KEY for AI diagram analysis
+                ⚠️ Set ANTHROPIC_API_KEY or OPENAI_API_KEY for AI diagram analysis
               </div>
               {% endif %}
             </div>
