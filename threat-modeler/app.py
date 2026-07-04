@@ -633,13 +633,30 @@ async def analyze_adhoc(
     return analyze_system(req.system, req.methodologies, use_llm=req.use_llm)
 
 
+def _risk_register_csv(threats: list, system_name: str = "System") -> bytes:
+    """Build a CSV risk register from a list of threats. Shared by the
+    /api/report/csv route and the {fmt}=csv path."""
+    import csv as _csv, io as _io
+    buf = _io.StringIO(); writer = _csv.writer(buf)
+    writer.writerow(["ID", "Title", "Severity", "Methodology", "Component", "Category", "CVSS3.1",
+                     "Cross-boundary", "ATT&CK ID", "ATT&CK Tactic", "SOC2", "ISO27001", "PCI-DSS", "Description"])
+    for i, t in enumerate(threats):
+        atk = t.get("attack") or {}; comp = t.get("compliance") or {}
+        writer.writerow([t.get("id", f"T{i+1:03d}"), t.get("title", ""), t.get("severity", ""), (t.get("methodology", "") or "").upper(),
+                         t.get("component_name", ""), t.get("category", ""), (t.get("cvss31", {}) or {}).get("score", ""),
+                         "Yes" if t.get("cross_boundary") else "No", atk.get("id", ""), atk.get("tactic", ""),
+                         " ".join(comp.get("soc2", [])), " ".join(comp.get("iso27001", [])), " ".join(comp.get("pci_dss", [])),
+                         t.get("description", "")])
+    return buf.getvalue().encode()
+
+
 @app.post("/api/report/{fmt}")
 async def adhoc_report(
     fmt: str,
     analysis: dict,
     user: dict = Depends(get_current_user),
 ):
-    if fmt not in ("markdown", "html", "pdf"):
+    if fmt not in ("markdown", "html", "pdf", "csv"):
         raise HTTPException(400)
     fname = f"threat_model_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
     if fmt == "markdown":
@@ -648,6 +665,11 @@ async def adhoc_report(
     if fmt == "html":
         return Response(to_html(analysis), media_type="text/html",
                         headers={"Content-Disposition": f'attachment; filename="{fname}.html"'})
+    if fmt == "csv":
+        threats = analysis.get("threats", [])
+        system_name = (analysis.get("system", {}) or {}).get("name", "System")
+        return Response(_risk_register_csv(threats, system_name), media_type="text/csv",
+                        headers={"Content-Disposition": f'attachment; filename="risk_register_{system_name.replace(" ", "_")}.csv"'})
     return Response(to_pdf(analysis), media_type="application/pdf",
                     headers={"Content-Disposition": f'attachment; filename="{fname}.pdf"'})
 
@@ -679,7 +701,7 @@ async def admin_audit_log(
 # UTILITY (used by canvas UI)
 # ===========================================================================
 @app.get("/api/methodologies")
-async def list_methodologies():
+async def list_methodologies(user: dict = Depends(get_current_user)):
     return {k: {"name": m["name"], "categories": list(m["categories"].keys())}
             for k, m in METHODOLOGIES.items()}
 
@@ -966,7 +988,7 @@ class BulkStatusRequest(BaseModel):
 async def bulk_update_status(req: BulkStatusRequest, user: dict = Depends(get_current_user)):
     tm = domain.get_threat_model(req.threat_model_id)
     if not tm: raise HTTPException(404, "Not found")
-    ensure_can_access_threat_model(user, tm)
+    ensure_can_access_threat_model(user, tm, "update")
     results = []
     for item in req.updates:
         try: results.append(domain.upsert_threat_status(req.threat_model_id, item.threat_id, item.status, updated_by=user["id"], owner=item.owner, due_date=item.due_date))
@@ -981,7 +1003,7 @@ async def bulk_update_status(req: BulkStatusRequest, user: dict = Depends(get_cu
 async def create_share_link(threat_model_id: int, request: Request, user: dict = Depends(get_current_user)):
     tm = domain.get_threat_model(threat_model_id)
     if not tm: raise HTTPException(404, "Not found")
-    ensure_can_access_threat_model(user, tm)
+    ensure_can_access_threat_model(user, tm, "read")
     body = await request.json()
     token = _secrets.token_urlsafe(24)
     from datetime import datetime as _dtnow
@@ -994,7 +1016,7 @@ async def create_share_link(threat_model_id: int, request: Request, user: dict =
 
 @app.get("/share/{token}", include_in_schema=False)
 async def view_shared_report(token: str):
-    from threat_engine.html_report import generate_html_report
+    from threat_engine.html_report import to_html
     from datetime import datetime as _dtnow2
     with domain.db_conn() as c:
         row = c.execute("SELECT * FROM share_tokens WHERE token=?", (token,)).fetchone()
@@ -1003,7 +1025,9 @@ async def view_shared_report(token: str):
     if _dtnow2.utcnow().isoformat() > row["expires_at"]: raise HTTPException(410, "Share link expired")
     tm = domain.get_threat_model(row["threat_model_id"])
     if not tm: raise HTTPException(404, "Not found")
-    return HTMLResponse(content=generate_html_report(tm))
+    if not tm.get("analysis"):
+        return HTMLResponse(content="<h1>Threat model has no analysis yet</h1>", status_code=200)
+    return HTMLResponse(content=to_html(tm["analysis"]))
 
 
 # ===========================================================================
@@ -1013,7 +1037,7 @@ async def view_shared_report(token: str):
 async def diff_releases(id1: int, id2: int, user: dict = Depends(get_current_user)):
     tm1 = domain.get_threat_model(id1); tm2 = domain.get_threat_model(id2)
     if not tm1 or not tm2: raise HTTPException(404, "One or both threat models not found")
-    ensure_can_access_threat_model(user, tm1); ensure_can_access_threat_model(user, tm2)
+    ensure_can_access_threat_model(user, tm1, "read"); ensure_can_access_threat_model(user, tm2, "read")
     def _key(t): return (t.get("title","").lower().strip(), t.get("component_name","").lower().strip())
     def _threats(tm): ar = tm.get("analysis_result") or {}; return ar.get("threats", []) if isinstance(ar, dict) else []
     t1_map = {_key(t): t for t in _threats(tm1)}; t2_map = {_key(t): t for t in _threats(tm2)}
@@ -1057,17 +1081,7 @@ async def generate_fix(req: FixRequest, user: dict = Depends(get_current_user)):
 async def report_csv(request: Request, user: dict = Depends(get_current_user)):
     body = await request.json()
     threats = body.get("threats", []); system_name = body.get("system", {}).get("name", "System")
-    import csv, io; buf = io.StringIO(); writer = csv.writer(buf)
-    writer.writerow(["ID","Title","Severity","Methodology","Component","Category","CVSS3.1","Cross-boundary","ATT&CK ID","ATT&CK Tactic","SOC2","ISO27001","PCI-DSS","Description"])
-    for i, t in enumerate(threats):
-        atk = t.get("attack") or {}; comp = t.get("compliance") or {}
-        writer.writerow([t.get("id",f"T{i+1:03d}"), t.get("title",""), t.get("severity",""), t.get("methodology","").upper(),
-                         t.get("component_name",""), t.get("category",""), t.get("cvss31",{}).get("score",""),
-                         "Yes" if t.get("cross_boundary") else "No",
-                         atk.get("id",""), atk.get("tactic",""),
-                         " ".join(comp.get("soc2",[])), " ".join(comp.get("iso27001",[])), " ".join(comp.get("pci_dss",[])),
-                         t.get("description","")])
-    return Response(content=buf.getvalue().encode(), media_type="text/csv",
+    return Response(content=_risk_register_csv(threats, system_name), media_type="text/csv",
                     headers={"Content-Disposition": f'attachment; filename="risk_register_{system_name.replace(" ","_")}.csv"'})
 
 

@@ -445,6 +445,18 @@ def analyze_system(
     from .scoring import enrich_threat_with_scoring
     from .detail import enrich_threat_with_detail
 
+    # If the model doesn't define trust boundaries, infer them heuristically so
+    # the cross-boundary rules, the DFD, and the report all reflect real zones
+    # instead of treating everything as one flat trust zone.
+    if not (system.get("trust_boundaries") or []):
+        from .trust_boundaries import infer_trust_boundaries_heuristic
+        inferred = infer_trust_boundaries_heuristic({
+            "components": system.get("components", []) or [],
+            "data_flows": system.get("data_flows", []) or [],
+        })
+        if inferred:
+            system = {**system, "trust_boundaries": inferred}
+
     all_threats: list[dict] = []
     components = system.get("components", []) or []
     flows = system.get("data_flows", []) or []

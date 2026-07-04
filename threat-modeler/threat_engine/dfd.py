@@ -216,9 +216,21 @@ def _draw_flow(flow: dict, comp_by_id: dict, positions: dict,
             f'</path>'
         )
     if full_label:
+        # A <textPath> follows its path's direction, so a right-to-left flow would
+        # render the label upside-down. Bind the label to a dedicated invisible
+        # path that always runs left-to-right (endpoints swapped when needed).
+        if (x1, y1) <= (x2, y2):
+            lx1, ly1, lx2, ly2 = x1, y1, x2, y2
+        else:
+            lx1, ly1, lx2, ly2 = x2, y2, x1, y1
+        label_path_id = f"lp_{flow['id']}"
+        parts.append(
+            f'<path id="{label_path_id}" d="M {lx1:.1f},{ly1:.1f} Q {cx:.1f},{cy:.1f} {lx2:.1f},{ly2:.1f}" '
+            f'fill="none" stroke="none"/>'
+        )
         parts.append(
             f'<text font-size="10" fill="#475569" font-family="system-ui,sans-serif">'
-            f'<textPath href="#{path_id}" startOffset="50%" text-anchor="middle">{xml_escape(full_label)}</textPath>'
+            f'<textPath href="#{label_path_id}" startOffset="50%" text-anchor="middle">{xml_escape(full_label)}</textPath>'
             f'</text>'
         )
 

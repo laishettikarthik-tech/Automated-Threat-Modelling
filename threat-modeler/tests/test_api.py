@@ -155,13 +155,15 @@ def test_health():
 t("GET /api/health is public", test_health)
 
 
-def test_methodologies_public():
-    r = client.get("/api/methodologies")
+def test_methodologies_requires_auth():
+    # Secure-by-default: reference data still requires a valid session.
+    assert client.get("/api/methodologies").status_code in (401, 403)
+    r = client.get("/api/methodologies", headers=H(admin_token()))
     assert r.status_code == 200
     body = r.json()
     assert "stride" in body and "dread" in body
 
-t("GET /api/methodologies is public", test_methodologies_public)
+t("GET /api/methodologies requires auth", test_methodologies_requires_auth)
 
 
 # ===========================================================================

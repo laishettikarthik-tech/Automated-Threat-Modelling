@@ -48,11 +48,18 @@ def to_html(analysis: dict) -> str:
 
     cb_count = sum(1 for t in threats if t.get("cross_boundary"))
 
-    # Pre-render threat data as JS (for filtering interactivity)
-    threats_js = json.dumps(threats, default=str)
-    boundaries_js = json.dumps(boundaries, default=str)
-    components_js = json.dumps(components, default=str)
-    flows_js = json.dumps(flows, default=str)
+    # Pre-render threat data as JS (for filtering interactivity).
+    # Escape <, >, & and JS line separators so attacker-controlled strings
+    # (e.g. a component literally named "</script>...") cannot break out of the
+    # <script> block. Stays valid JSON — the browser decodes \u003c back to '<'.
+    def _json_for_script(obj):
+        return (json.dumps(obj, default=str)
+                .replace("<", "\\u003c").replace(">", "\\u003e")
+                .replace("&", "\\u0026").replace("\u2028", "\\u2028").replace("\u2029", "\\u2029"))
+    threats_js = _json_for_script(threats)
+    boundaries_js = _json_for_script(boundaries)
+    components_js = _json_for_script(components)
+    flows_js = _json_for_script(flows)
 
     # Boundary palette synced with frontend canvas
     boundary_palette = [

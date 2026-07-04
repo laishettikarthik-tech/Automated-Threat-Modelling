@@ -464,11 +464,11 @@ import json as _json_domain
 # ---------------------------------------------------------------------------
 def create_custom_rule(user_id: int, data: dict) -> dict:
     with db_conn(write=True) as c:
-        c.execute("INSERT INTO custom_threat_rules (user_id,name,title,severity,category,description,applies_to,mitigations,tags) VALUES (?,?,?,?,?,?,?,?,?)",
+        cur = c.execute("INSERT INTO custom_threat_rules (user_id,name,title,severity,category,description,applies_to,mitigations,tags) VALUES (?,?,?,?,?,?,?,?,?)",
             (user_id, data.get("name","Custom Rule"), data.get("title",""), data.get("severity","Medium"),
              data.get("category","Custom"), data.get("description",""),
              _json_domain.dumps(data.get("applies_to",[])), _json_domain.dumps(data.get("mitigations",[])), _json_domain.dumps(data.get("tags",[]))))
-        rid = c.lastrowid
+        rid = cur.lastrowid
     return get_custom_rule(rid)
 
 def get_custom_rule(rule_id: int) -> dict | None:
