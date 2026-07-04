@@ -1,20 +1,3 @@
-
-import re as _re2
-_SEV_RANK = {"Critical":4,"High":3,"Medium":2,"Low":1,"Info":0}
-
-def _dedup_threats(threats):
-    seen = {}
-    for t in threats:
-        key = (_re2.sub(r"\W+"," ",(t.get("title") or "").lower()).strip(), t.get("component_id",""))
-        if key not in seen or _SEV_RANK.get(t.get("severity",""),0) > _SEV_RANK.get(seen[key].get("severity",""),0):
-            seen[key] = {**t, "methodologies": seen.get(key,{}).get("methodologies",[]) + [t.get("methodology","")]}
-        else:
-            seen[key]["methodologies"] = list(dict.fromkeys(seen[key]["methodologies"]+[t.get("methodology","")]))
-            seen[key]["mitigations"] = list(dict.fromkeys((seen[key].get("mitigations") or [])+(t.get("mitigations") or [])))
-    for t in seen.values():
-        t["methodology"] = " + ".join(m for m in t.get("methodologies",[]) if m)
-    return list(seen.values())
-
 """Threat analyzer.
 
 Takes a normalized system model:
@@ -35,9 +18,27 @@ import os
 import json
 import uuid
 import re
+import re as _re2
 from typing import Any
 
 from .methodologies import METHODOLOGIES, COMPONENT_TYPES
+
+
+_SEV_RANK = {"Critical": 4, "High": 3, "Medium": 2, "Low": 1, "Info": 0}
+
+
+def _dedup_threats(threats):
+    seen = {}
+    for t in threats:
+        key = (_re2.sub(r"\W+", " ", (t.get("title") or "").lower()).strip(), t.get("component_id", ""))
+        if key not in seen or _SEV_RANK.get(t.get("severity", ""), 0) > _SEV_RANK.get(seen[key].get("severity", ""), 0):
+            seen[key] = {**t, "methodologies": seen.get(key, {}).get("methodologies", []) + [t.get("methodology", "")]}
+        else:
+            seen[key]["methodologies"] = list(dict.fromkeys(seen[key]["methodologies"] + [t.get("methodology", "")]))
+            seen[key]["mitigations"] = list(dict.fromkeys((seen[key].get("mitigations") or []) + (t.get("mitigations") or [])))
+    for t in seen.values():
+        t["methodology"] = " + ".join(m for m in t.get("methodologies", []) if m)
+    return list(seen.values())
 
 
 # ---------------------------------------------------------------------------
@@ -406,7 +407,7 @@ Respond with ONLY valid JSON — no prose, no markdown fences. Schema:
 
     try:
         resp = client.messages.create(
-            model="claude-opus-4-7",
+            model=os.getenv("ANTHROPIC_MODEL", "claude-opus-4-8"),
             max_tokens=2000,
             messages=[{"role": "user", "content": prompt}],
         )

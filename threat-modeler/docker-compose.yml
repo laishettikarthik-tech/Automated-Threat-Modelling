@@ -5,8 +5,20 @@ services:
     ports:
       - "8000:8000"
     environment:
-      # Optional: enable LLM enhancement by setting your key
+      # --- Required: the app cannot be used without these ---
+      # Injected from the host environment or a .env file (see .env.example).
+      # The ":?" guard makes `docker compose up` fail fast with a clear message
+      # instead of silently generating a throwaway JWT secret on every restart.
+      JWT_SECRET: "${JWT_SECRET:?JWT_SECRET must be set — generate: python -c 'import secrets; print(secrets.token_urlsafe(48))'}"
+      INITIAL_ADMIN_EMAIL: "${INITIAL_ADMIN_EMAIL:?INITIAL_ADMIN_EMAIL must be set}"
+      INITIAL_ADMIN_PASSWORD: "${INITIAL_ADMIN_PASSWORD:?INITIAL_ADMIN_PASSWORD must be set}"
+      # --- Optional ---
+      # Restrict browser origins in production (comma-separated). Default: *
+      CORS_ORIGINS: "${CORS_ORIGINS:-*}"
+      # Enable Claude LLM enhancement by setting your key
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+      # Override the Claude model used for enhancement
+      ANTHROPIC_MODEL: "${ANTHROPIC_MODEL:-claude-opus-4-8}"
     volumes:
       # Persist the SQLite project DB across container restarts
       - ./data:/app/data

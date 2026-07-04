@@ -3,10 +3,9 @@
 > AI-powered threat modeling for engineering teams — STRIDE, DREAD, LINDDUN, PASTA and OWASP Top 10.
 
 [![Live Demo](https://img.shields.io/badge/🌐_Live_Site-GitHub_Pages-22c55e?style=flat-square)](https://rootabhi1.github.io/Automated-Threat-Modelling/)
-[![Feature Branch](https://img.shields.io/badge/branch-feature%2Fenhancements-6366f1?style=flat-square&logo=git)](https://github.com/rootabhi1/Automated-Threat-Modelling/tree/feature/enhancements)
 [![Python](https://img.shields.io/badge/Python-3.11+-blue?style=flat-square)](https://python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.110+-green?style=flat-square)](https://fastapi.tiangolo.com)
-[![Claude AI](https://img.shields.io/badge/Claude-Sonnet%204.6-purple?style=flat-square)](https://anthropic.com)
+[![Claude AI](https://img.shields.io/badge/Claude-Opus%204.8-purple?style=flat-square)](https://anthropic.com)
 [![License](https://img.shields.io/badge/License-MIT-gray?style=flat-square)](LICENSE)
 
 ---
@@ -17,7 +16,7 @@
 
 The project site (GitHub Pages) includes:
 - Interactive quick-start guide with copy-paste commands
-- Full feature overview with what's new in `feature/enhancements`
+- Full feature overview
 - Complete API reference (22 endpoints)
 - Common troubleshooting steps
 
@@ -25,19 +24,18 @@ The project site (GitHub Pages) includes:
 
 ## Branches
 
-| Branch | Description |
-|--------|-------------|
-| `main` | Original application — STRIDE, DREAD, LINDDUN, PASTA |
-| [`feature/enhancements`](https://github.com/rootabhi1/Automated-Threat-Modelling/tree/feature/enhancements) | All new features — OWASP Top 10, ATT&CK, compliance, custom rules, dark mode, AI fix, CI/CD, and 10+ more |
+Everything now lives on `main` — the former `feature/enhancements` branch has been
+merged in, so there is a single source of truth. STRIDE, DREAD, LINDDUN, PASTA,
+OWASP Top 10, ATT&CK mapping, compliance controls, custom rules, dark mode, AI fix,
+CI/CD and the rest are all on `main`.
 
 ---
 
-## Run locally (feature/enhancements branch)
+## Run locally
 
 ```bash
-# 1. Clone the feature branch
-git clone --branch feature/enhancements \
-  https://github.com/rootabhi1/Automated-Threat-Modelling
+# 1. Clone
+git clone https://github.com/rootabhi1/Automated-Threat-Modelling
 cd Automated-Threat-Modelling/threat-modeler
 
 # 2. Create virtual environment and install
@@ -72,7 +70,38 @@ curl http://localhost:8000/readyz
 
 ---
 
-## What's in feature/enhancements
+## Deploy with Docker
+
+The compose file requires three secrets — it fails fast if they are missing, so
+you can't accidentally boot with a throwaway JWT secret (which would log everyone
+out on every restart).
+
+```bash
+cd threat-modeler
+cp .env.example .env          # then edit .env
+
+# Generate a persistent JWT secret:
+python -c "import secrets; print(secrets.token_urlsafe(48))"
+
+docker compose up --build
+```
+
+Minimum `.env`:
+
+```bash
+JWT_SECRET=<paste the generated value>
+INITIAL_ADMIN_EMAIL=admin@example.com
+INITIAL_ADMIN_PASSWORD=change-me-now
+# ANTHROPIC_API_KEY=sk-ant-...   # optional — omit to run rules-only, fully offline
+```
+
+> **Single-instance note.** Sessions, rate limiting and the SQLite store are
+> per-process. Run one container instance. For horizontal scaling, move to
+> PostgreSQL (`DATABASE_URL`) and a shared `JWT_SECRET` first.
+
+---
+
+## What's included
 
 ### Analysis engine
 | Feature | Description |

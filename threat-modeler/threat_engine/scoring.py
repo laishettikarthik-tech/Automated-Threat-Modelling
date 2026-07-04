@@ -1,3 +1,18 @@
+"""CVSS 3.1 + 4.0 derivation and CWE mapping for threats.
+
+The scoring is *derived* — we don't ask the user for a CVSS vector. Instead we
+infer it from the threat's category, the affected component type, and (when
+present) the data flow's attributes. This gives consistent scores across runs
+and lets us show severity in the language security teams already use.
+
+References:
+  - CVSS 3.1 spec: https://www.first.org/cvss/v3.1/specification-document
+  - CVSS 4.0 spec: https://www.first.org/cvss/v4-0/specification-document
+  - CWE: https://cwe.mitre.org/
+"""
+from __future__ import annotations
+import math
+
 
 CWE_TO_ATTACK = {
     "CWE-20":  {"id":"T1190","tactic":"Initial Access","name":"Exploit Public-Facing Application"},
@@ -30,21 +45,6 @@ COMPLIANCE_MAPPING = {
     "CWE-798": {"soc2":["CC6.1"],"iso27001":["A.9.2.4"],"pci_dss":["8.2.1"]},
     "CWE-918": {"soc2":["CC6.6"],"iso27001":["A.13.1.3"],"pci_dss":["1.3"]},
 }
-
-"""CVSS 3.1 + 4.0 derivation and CWE mapping for threats.
-
-The scoring is *derived* — we don't ask the user for a CVSS vector. Instead we
-infer it from the threat's category, the affected component type, and (when
-present) the data flow's attributes. This gives consistent scores across runs
-and lets us show severity in the language security teams already use.
-
-References:
-  - CVSS 3.1 spec: https://www.first.org/cvss/v3.1/specification-document
-  - CVSS 4.0 spec: https://www.first.org/cvss/v4-0/specification-document
-  - CWE: https://cwe.mitre.org/
-"""
-from __future__ import annotations
-import math
 
 
 # ---------------------------------------------------------------------------
