@@ -6,3 +6,6 @@ __pycache__/
 data/
 uploads/
 .env
+
+# Build artifacts / generated output
+*.zip

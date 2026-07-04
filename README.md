@@ -1,33 +1,25 @@
-# 🛡 Automated Threat Modeler
+# 🛡 ThreatGuard — Automated Threat Modeling
 
-> AI-powered threat modeling for engineering teams — STRIDE, DREAD, LINDDUN, PASTA and OWASP Top 10.
+> Threat modeling for engineering teams — STRIDE, DREAD, LINDDUN, PASTA and OWASP Top 10, with CVSS/CWE/MITRE ATT&CK scoring and compliance mapping. Works fully offline; optionally enriched by an LLM (Claude **or** any OpenAI-compatible model).
 
-[![Live Demo](https://img.shields.io/badge/🌐_Live_Site-GitHub_Pages-22c55e?style=flat-square)](https://rootabhi1.github.io/Automated-Threat-Modelling/)
+[![Live Site](https://img.shields.io/badge/🌐_Live_Site-GitHub_Pages-22c55e?style=flat-square)](https://rootabhi1.github.io/Automated-Threat-Modelling/)
 [![Python](https://img.shields.io/badge/Python-3.11+-blue?style=flat-square)](https://python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.110+-green?style=flat-square)](https://fastapi.tiangolo.com)
-[![Claude AI](https://img.shields.io/badge/Claude-Opus%204.8-purple?style=flat-square)](https://anthropic.com)
 [![License](https://img.shields.io/badge/License-MIT-gray?style=flat-square)](LICENSE)
 
 ---
 
-## 🌐 Live project site
+## What it does
 
-**[https://rootabhi1.github.io/Automated-Threat-Modelling/](https://rootabhi1.github.io/Automated-Threat-Modelling/)**
+ThreatGuard turns a description of a system — typed, drawn on a canvas, or **uploaded as an architecture diagram** — into a structured threat model: identified threats, severity and CVSS scores, CWE and MITRE ATT&CK references, mapped compliance controls, a data-flow diagram with trust boundaries, and exportable reports.
 
-The project site (GitHub Pages) includes:
-- Interactive quick-start guide with copy-paste commands
-- Full feature overview
-- Complete API reference (22 endpoints)
-- Common troubleshooting steps
-
----
-
-## Branches
-
-Everything now lives on `main` — the former `feature/enhancements` branch has been
-merged in, so there is a single source of truth. STRIDE, DREAD, LINDDUN, PASTA,
-OWASP Top 10, ATT&CK mapping, compliance controls, custom rules, dark mode, AI fix,
-CI/CD and the rest are all on `main`.
+- **Five methodologies** — STRIDE, DREAD, LINDDUN, PASTA, OWASP Top 10, applied by a deterministic rule engine (no API key required).
+- **Rich scoring** — CVSS 3.1 & 4.0, CWE, MITRE ATT&CK technique/tactic, and SOC 2 / ISO 27001 / PCI-DSS control mapping.
+- **Trust boundaries & DFD** — boundaries are auto-inferred when none are defined, cross-boundary flows are flagged, and a labelled data-flow diagram is rendered.
+- **Diagram upload** — drop in a PNG/JPEG/WebP architecture diagram; with a vision-capable LLM it is turned into a system model, otherwise you get an editable starting point.
+- **Optional LLM enrichment** — AI fix generation, diagram extraction and richer narratives via **Claude** or any **OpenAI-compatible** endpoint (OpenAI, Azure, Ollama, vLLM, …). Absent a key, everything still works in rules-only mode.
+- **Team workflow** — Release → Feature → Threat Model hierarchy, role-based access (user / management / admin), per-threat status tracking, release-to-release diffs, read-only share links, custom rules, and an audit log.
+- **Reports** — HTML, PDF, Markdown, a CSV risk register, and an executive summary.
 
 ---
 
@@ -38,181 +30,96 @@ CI/CD and the rest are all on `main`.
 git clone https://github.com/rootabhi1/Automated-Threat-Modelling
 cd Automated-Threat-Modelling/threat-modeler
 
-# 2. Create virtual environment and install
+# 2. Virtual environment + dependencies
 python3 -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
-# 3. Set required environment variables
+# 3. Required environment (see ../.env.example for the full list)
 export INITIAL_ADMIN_EMAIL=admin@example.com
-export INITIAL_ADMIN_PASSWORD=changeme123
+export INITIAL_ADMIN_PASSWORD='ChangeMe123!'
 export JWT_SECRET=$(python3 -c "import secrets; print(secrets.token_urlsafe(48))")
-export ANTHROPIC_API_KEY=sk-ant-...    # Optional — enables Claude AI features
 
-# 4. Start the server
-python app.py
-# or with auto-reload:  uvicorn app:app --reload --port 8000
-# or with Docker:       docker compose up --build
+# 4. (Optional) enable an LLM — pick ONE, or skip for rules-only mode
+export ANTHROPIC_API_KEY=sk-ant-...            # Claude
+# — or any OpenAI-compatible endpoint —
+# export OPENAI_API_KEY=...  OPENAI_MODEL=gpt-4o  OPENAI_BASE_URL=https://api.openai.com/v1
 
-# 5. Open in browser
-open http://localhost:8000
-# API docs: http://localhost:8000/docs
+# 5. Start
+python app.py                                   # http://localhost:8000
+# auto-reload:  uvicorn app:app --reload --port 8000
 ```
 
-**Verify it's working:**
-```bash
-curl http://localhost:8000/healthz
-# → {"status":"ok","version":"2.1"}
+Interactive API docs are served at `/docs`.
 
-curl http://localhost:8000/readyz
-# → {"status":"ready","db":"ok"}
-```
-
----
-
-## Deploy with Docker
-
-The compose file requires three secrets — it fails fast if they are missing, so
-you can't accidentally boot with a throwaway JWT secret (which would log everyone
-out on every restart).
+### Docker
 
 ```bash
-cd threat-modeler
-cp .env.example .env          # then edit .env
-
-# Generate a persistent JWT secret:
-python -c "import secrets; print(secrets.token_urlsafe(48))"
-
-docker compose up --build
+cp .env.example .env      # then edit .env (JWT_SECRET + admin creds are required)
+docker compose up --build # serves on http://localhost:8000
 ```
 
-Minimum `.env`:
-
-```bash
-JWT_SECRET=<paste the generated value>
-INITIAL_ADMIN_EMAIL=admin@example.com
-INITIAL_ADMIN_PASSWORD=change-me-now
-# ANTHROPIC_API_KEY=sk-ant-...   # optional — omit to run rules-only, fully offline
-```
-
-> **Single-instance note.** Sessions, rate limiting and the SQLite store are
-> per-process. Run one container instance. For horizontal scaling, move to
-> PostgreSQL (`DATABASE_URL`) and a shared `JWT_SECRET` first.
+The compose file fails fast if `JWT_SECRET`, `INITIAL_ADMIN_EMAIL` or `INITIAL_ADMIN_PASSWORD` are unset, so containers never boot with insecure defaults.
 
 ---
 
-## What's included
+## Configuration
 
-### Analysis engine
-| Feature | Description |
-|---------|-------------|
-| **OWASP Top 10 2021** | 5th methodology — 10 categories, 22 threats (A01–A10) |
-| **Threat deduplication** | Cross-methodology duplicates merged, highest severity kept |
-| **MITRE ATT&CK mapping** | Every threat gets technique ID + tactic from CWE |
-| **CVSS 3.1 + 4.0** | Both scores displayed per threat |
-| **Compliance controls** | SOC2 / ISO 27001 / PCI-DSS IDs mapped per threat |
-| **Custom threat rules** | Define domain-specific threats via UI, persisted to DB |
+All settings are environment variables; see [`.env.example`](.env.example). The essentials:
 
-### Results & reporting
-| Feature | Description |
-|---------|-------------|
-| **AI code fix** | 🔧 Fix button — Claude generates before/after code in your stack |
-| **Share link** | 7-day read-only URL, no login required |
-| **Release diff** | Compare two saved models: new, resolved, severity changes |
-| **Risk matrix** | 5×5 Likelihood × Impact, click cells to drill in |
-| **Attack paths** | Top 5 multi-hop chains across trust boundaries |
-| **Executive PDF** | Claude-narrated summary — HTML or PDF via WeasyPrint |
-| **Risk register CSV** | With CVSS, ATT&CK, compliance controls |
+| Variable | Required | Purpose |
+|---|---|---|
+| `JWT_SECRET` | ✅ | Signs access/refresh tokens. Use a long random string. |
+| `INITIAL_ADMIN_EMAIL` / `INITIAL_ADMIN_PASSWORD` | ✅ | Admin account seeded on first run. |
+| `LLM_PROVIDER` | — | `anthropic` or `openai`; auto-detected from whichever key is set. |
+| `ANTHROPIC_API_KEY` / `ANTHROPIC_MODEL` | — | Enable Claude enrichment. |
+| `OPENAI_API_KEY` / `OPENAI_MODEL` / `OPENAI_BASE_URL` | — | Enable any OpenAI-compatible model (incl. self-hosted). |
+| `CORS_ORIGINS` | — | Restrict origins in production (default `*`). |
+| `RATE_LIMIT_ENABLED` | — | Per-IP login/refresh rate limiting (default on). |
 
-### UX & DX
-| Feature | Description |
-|---------|-------------|
-| **Dark mode** | 🌙/☀️ toggle in header, saved to localStorage |
-| **Keyboard shortcuts** | `n` `f` `b` `a` `Ctrl+S` `?` |
-| **Bulk status update** | Select all Low/Info and mark accepted in one click |
-| **5 system templates** | SaaS, Mobile, Microservices, Data Pipeline, IoT |
-| **Diagram upload** | Claude Vision extracts components from PNG/JPG/WebP |
-| **Mobile responsive** | Stacked layout, touch-friendly, hidden minimap |
-
-### DevOps
-| Feature | Description |
-|---------|-------------|
-| **PostgreSQL** | Set `DATABASE_URL` to switch from SQLite |
-| **Health checks** | `/healthz` (liveness) + `/readyz` (DB ping) |
-| **JSON logging** | Structured with `X-Request-ID` correlation |
-| **Security headers** | X-Content-Type-Options, X-Frame-Options, HSTS, rate limiting |
-| **GitHub Actions CI** | Threat model on every PR, pip-audit CVE scan |
-| **Dependabot** | Weekly dep updates for pip and GitHub Actions |
-| **Test suite** | pytest covering all new endpoints |
+No LLM key configured ⇒ the app runs in **rules-only** mode with the full methodology engine.
 
 ---
 
-## API reference
+## Security
 
-| Method | Endpoint | Auth | Description |
-|--------|----------|------|-------------|
-| POST | `/api/auth/login` | — | Get JWT token |
-| POST | `/api/analyze` | ✓ | Run threat model |
-| POST | `/api/extract-from-text` | ✓ | Text → components |
-| POST | `/api/extract-from-diagram` | ✓ | Upload a diagram → components (Claude Vision; editable stub without a key) |
-| POST | `/api/threat-models/from-diagram` | ✓ | Upload a diagram → creates + analyzes a threat model in one step |
-| GET  | `/api/templates` | ✓ | Built-in system templates |
-| POST | `/api/custom-rules` | ✓ | Create custom threat rule |
-| GET  | `/api/custom-rules` | ✓ | List custom rules |
-| POST | `/api/threat-status` | ✓ | Set remediation status |
-| POST | `/api/threat-status/bulk` | ✓ | Bulk update statuses |
-| POST | `/api/share/:id` | ✓ | Generate share link |
-| GET  | `/share/:token` | — | View shared report |
-| GET  | `/api/releases/:a/diff/:b` | ✓ | Compare two models |
-| POST | `/api/threat/fix` | ✓ | AI code fix (Claude) |
-| POST | `/api/report/csv` | ✓ | Risk register CSV |
-| POST | `/api/report/executive` | ✓ | Executive HTML/PDF |
-| POST | `/api/create-ticket` | ✓ | GitHub Issues / Jira |
-| GET  | `/healthz` | — | Liveness probe |
-| GET  | `/readyz` | — | Readiness probe |
-
-Full interactive docs at `http://localhost:8000/docs` once running.
+- JWT auth with refresh-token **rotation** (reuse of a rotated token is rejected) and logout revocation.
+- Passwords hashed with bcrypt; failed-login **account lockout**; per-IP rate limiting.
+- **Secure by default** — every data endpoint requires a session; role permissions and per-resource ownership are enforced (a user cannot read another user's models).
+- Security headers (`X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, HSTS on HTTPS); reports are XSS-safe (user-supplied names are escaped, including inside embedded JSON).
+- Parameterised SQL throughout; audit log for auth and access decisions.
 
 ---
 
-## Running tests
+## Testing
+
+The suite runs in-process against a real app instance and SQLite — no network required.
 
 ```bash
 cd threat-modeler
-export INITIAL_ADMIN_EMAIL=admin@example.com
-export INITIAL_ADMIN_PASSWORD=changeme123
-export JWT_SECRET=test-secret
-pytest tests/test_new_endpoints.py -v
+export JWT_SECRET=test INITIAL_ADMIN_EMAIL=admin@corp.io INITIAL_ADMIN_PASSWORD='AdminPass123!' RATE_LIMIT_ENABLED=0
+for t in tests/test_*.py; do python3 "$t"; done
 ```
 
----
-
-## Environment variables
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `INITIAL_ADMIN_EMAIL` | **Yes** | Admin account email on first run |
-| `INITIAL_ADMIN_PASSWORD` | **Yes** | Admin account password on first run |
-| `JWT_SECRET` | **Yes** | JWT signing secret — set a persistent value |
-| `ANTHROPIC_API_KEY` | Optional | Claude Vision, AI fix, executive report narration |
-| `DATABASE_URL` | Optional | PostgreSQL: `postgresql://user:pass@host:5432/atm` |
-| `SLACK_WEBHOOK_URL` | Optional | Slack alerts for new Critical/High threats |
-| `SMTP_HOST/PORT/USER/PASS` | Optional | Email alert credentials |
-| `NOTIFY_EMAIL_FROM/TO` | Optional | Email alert sender/recipient |
-| `NOTIFY_THRESHOLD` | Optional | `critical` / `high` (default) / `all` |
-| `GITHUB_TOKEN` + `GITHUB_REPO` | Optional | GitHub Issues ticket export |
-| `JIRA_BASE_URL/EMAIL/API_TOKEN/PROJECT_KEY` | Optional | Jira integration |
+`tests/test_full_product.py` is a whole-product sweep (119 checks across 17 areas: auth, RBAC/IDOR, CRUD, engine, trust boundaries/DFD, uploads, multi-LLM, reports, sharing, diff, status, security, and a **secure-by-default sweep** that calls every route anonymously to confirm none leak). See [`TESTING.md`](TESTING.md) for details.
 
 ---
 
-## Screenshots
+## Project layout
 
-| Dashboard | New Model | Threat Analysis |
-|-----------|-----------|-----------------|
-| ![Dashboard](docs/screenshots/atm_dashboard.png) | ![New Model](docs/screenshots/atm_newmodel.png) | ![Threats](docs/screenshots/atm_threats.png) |
+```
+threat-modeler/
+  app.py                 FastAPI app — routes, auth wiring, middleware
+  auth/                  JWT, dependencies, RBAC permission registry
+  db/                    SQLite connection + domain queries
+  threat_engine/         methodologies, scoring, DFD, trust boundaries,
+                         diagram extraction, LLM provider layer, reports
+  templates/  static/    server-rendered UI + canvas assets
+  tests/                 test suite (8 files)
+```
 
 ---
 
 ## License
 
-MIT © rootabhi1
+MIT — see [LICENSE](LICENSE).
