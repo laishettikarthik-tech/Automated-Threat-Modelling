@@ -23,6 +23,16 @@ ThreatGuard turns a description of a system — typed, drawn on a canvas, or **u
 
 ---
 
+## Sample output
+
+A full generated report is checked in at **[`docs/sample-report.html`](docs/sample-report.html)** — 191 threats across STRIDE / OWASP / LINDDUN for a sample retail platform, each with CVSS, CWE and MITRE ATT&CK references and compliance mapping, plus a data-flow diagram with automatically inferred trust boundaries.
+
+| Dashboard | Threat canvas | Analysis & data-flow diagram |
+|---|---|---|
+| ![Dashboard](docs/screenshots/01_dashboard.png) | ![Canvas](docs/screenshots/02_new_threat_model.png) | ![Analysis](docs/screenshots/03_threat_analysis.png) |
+
+---
+
 ## Run locally
 
 ```bash
